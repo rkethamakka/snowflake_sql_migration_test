@@ -21,6 +21,52 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 
 ---
 
+## Report Templates by Object Type
+
+### Table Migration
+```markdown
+# Verification: <table_name>
+
+## Row Count
+| SQL Server | Snowflake | Match |
+|------------|-----------|-------|
+| X rows | X rows | ✅ |
+
+## Data Comparison
+| Column | SQL Server | Snowflake | Match |
+|--------|------------|-----------|-------|
+| col1 | value | value | ✅ |
+```
+
+### Function Migration
+```markdown
+# Verification: <function_name>
+
+## Execution
+| Input | SQL Server Output | Snowflake Output | Match |
+|-------|-------------------|------------------|-------|
+| X | Y | Y | ✅ |
+```
+
+### Stored Procedure Migration
+```markdown
+# Verification: <procedure_name>
+
+## Execution
+| System | Command | Rows |
+|--------|---------|------|
+| SQL Server | EXEC ... | X |
+| Snowflake | CALL ... | X |
+
+## Output Comparison
+| Metric | SQL Server | Snowflake | Match |
+|--------|------------|-----------|-------|
+| total1 | $X | $X | ✅ |
+| total2 | $Y | $Y | ✅ |
+```
+
+---
+
 ## Responsibilities
 
 | Task | This Skill |
