@@ -32,7 +32,7 @@ docker exec sqlserver sqlcmd -d FINANCIAL_PLANNING -Q "
 snow sql -q "CALL PLANNING.usp_ProcessBudgetConsolidation(1, 'FULL', TRUE, ...)"
 ```
 
-**Results:** See `test/results/QUICK_VERIFICATION.md`
+**Results:** [test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
 
 ## What Changed
 
