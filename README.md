@@ -2,34 +2,15 @@
 
 Migrated `usp_ProcessBudgetConsolidation` - a 510-line stored procedure with cursors, hierarchy rollups, and intercompany eliminations.
 
-## Quick Start
+## Quick Start (OpenClaw Skills)
 
-```bash
-# Deploy to Snowflake
-snow sql -f snowflake/tables/*.sql
-snow sql -f snowflake/functions/*.sql
-snow sql -f snowflake/views/*.sql
-snow sql -f snowflake/procedures/usp_ProcessBudgetConsolidation.sql
+Run these skills in order:
 
-# Load test data
-snow sql -f test/data/snowflake/usp_ProcessBudgetConsolidation_setup.sql
-
-# Run procedure
-snow sql -q "CALL PLANNING.usp_ProcessBudgetConsolidation(1, 'FULL', TRUE, FALSE, NULL, 100, FALSE)"
 ```
-
-## Verification
-
-Run both systems and compare:
-
-```bash
-# SQL Server
-docker exec sqlserver sqlcmd -d FINANCIAL_PLANNING -Q "
-  EXEC Planning.usp_ProcessBudgetConsolidation @SourceBudgetHeaderID=1, ...
-"
-
-# Snowflake  
-snow sql -q "CALL PLANNING.usp_ProcessBudgetConsolidation(1, 'FULL', TRUE, ...)"
+1. sql-migration-planner  → Analyze source, generate migration plan
+2. sql-migration          → Deploy tables, functions, views, procedures to Snowflake
+3. test-data-generator    → Generate matching test data for both systems
+4. sql-migration-verify   → Run side-by-side comparison, generate report
 ```
 
 **Results:** [test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
