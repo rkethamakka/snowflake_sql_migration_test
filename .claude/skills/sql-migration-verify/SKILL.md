@@ -34,26 +34,86 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 
 ---
 
-## Fallback: SQL Server Procedure Failure
+## Handling SQL Server Procedure Failures
 
 **When SQL Server procedure fails** (transaction errors, missing dependencies, etc.):
 
-### Detection
+### Step 1: Detect the Error
 ```bash
-# Run procedure and check for errors
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd ... -Q "
   BEGIN TRY
     EXEC Planning.usp_<procedure> @Param = 1;
     SELECT 'SUCCESS' as status;
   END TRY
   BEGIN CATCH
-    SELECT 'FAILED' as status, ERROR_MESSAGE() as error;
+    SELECT 'FAILED' as status, ERROR_NUMBER() as errnum, ERROR_MESSAGE() as error;
   END CATCH
 "
 ```
 
-### Fallback Workflow
-If SQL Server procedure fails:
+### Step 2: Fix Common Transaction Bugs
+
+**Msg 266 - Transaction count mismatch:**
+The source procedure has unbalanced BEGIN TRAN / COMMIT / ROLLBACK.
+
+**Msg 1934 - QUOTED_IDENTIFIER error:**
+The procedure was created with QUOTED_IDENTIFIER OFF but tables have indexed views/computed columns.
+**This requires recreating the procedure** - cannot be fixed with a wrapper.
+
+**Fix for Msg 266: Create a wrapper that ensures clean transaction state:**
+```sql
+-- Create wrapper procedure
+CREATE OR ALTER PROCEDURE Planning.usp_<procedure>_TestWrapper
+    @SourceBudgetHeaderID INT,
+    @TargetBudgetHeaderID INT OUTPUT,
+    @RowsProcessed INT OUTPUT,
+    @ErrorMessage NVARCHAR(4000) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;  -- Auto-rollback on error
+    
+    DECLARE @InitialTranCount INT = @@TRANCOUNT;
+    
+    BEGIN TRY
+        -- Call original procedure
+        EXEC Planning.usp_<procedure>
+            @SourceBudgetHeaderID = @SourceBudgetHeaderID,
+            @TargetBudgetHeaderID = @TargetBudgetHeaderID OUTPUT,
+            @RowsProcessed = @RowsProcessed OUTPUT,
+            @ErrorMessage = @ErrorMessage OUTPUT;
+        
+        -- Clean up any orphaned transactions
+        WHILE @@TRANCOUNT > @InitialTranCount
+            COMMIT;
+    END TRY
+    BEGIN CATCH
+        -- Rollback any orphaned transactions
+        WHILE @@TRANCOUNT > @InitialTranCount
+            ROLLBACK;
+        
+        SET @ErrorMessage = ERROR_MESSAGE();
+        SET @RowsProcessed = 0;
+    END CATCH
+END
+```
+
+### Step 3: Run with Wrapper
+```bash
+docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd ... -Q "
+  DECLARE @TargetID INT, @Rows INT, @Err NVARCHAR(4000);
+  EXEC Planning.usp_<procedure>_TestWrapper
+    @SourceBudgetHeaderID = 1,
+    @TargetBudgetHeaderID = @TargetID OUTPUT,
+    @RowsProcessed = @Rows OUTPUT,
+    @ErrorMessage = @Err OUTPUT;
+  SELECT @TargetID as TargetID, @Rows as RowsProcessed, ISNULL(@Err, 'Success') as Status;
+"
+```
+
+### Step 4: Fallback if Still Fails
+
+If wrapper also fails:
 
 1. **Document the failure** in verification report
 2. **Compare SOURCE data** instead of consolidated output:
@@ -72,12 +132,13 @@ If SQL Server procedure fails:
 4. **Run Snowflake procedure** and verify against expected business logic
 5. **Report clearly** that SQL Server proc couldn't run, but Snowflake verified via logic
 
-### Report Template (Fallback Mode)
+### Report Template
 ```markdown
 ## SQL Server Execution
-Status: ❌ FAILED
-Error: <error message>
-Fallback: Comparing source data + Snowflake business logic verification
+Status: ⚠️ FIXED / ❌ FAILED
+Original Error: <error message>
+Fix Applied: Transaction wrapper / None
+Result: <success/failure>
 
 ## Source Data Comparison
 | Metric | SQL Server | Snowflake | Match |
@@ -85,8 +146,10 @@ Fallback: Comparing source data + Snowflake business logic verification
 | Row count | X | X | ✅ |
 | Total amount | $X | $X | ✅ |
 
-## Snowflake Verification (Business Logic)
-<standard verification against expected results>
+## Consolidated Data Comparison (if both ran)
+| Metric | SQL Server | Snowflake | Match |
+|--------|------------|-----------|-------|
+...
 ```
 
 ---
