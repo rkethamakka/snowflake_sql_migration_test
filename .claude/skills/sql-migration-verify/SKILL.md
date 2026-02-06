@@ -58,7 +58,30 @@ The source procedure has unbalanced BEGIN TRAN / COMMIT / ROLLBACK.
 
 **Msg 1934 - QUOTED_IDENTIFIER error:**
 The procedure was created with QUOTED_IDENTIFIER OFF but tables have indexed views/computed columns.
-**This requires recreating the procedure** - cannot be fixed with a wrapper.
+
+**Fix: Create a fixed version of the procedure:**
+1. Read original from `src/StoredProcedures/<procedure>.sql`
+2. Create fixed version at `src/StoredProcedures/<procedure>_fixed.sql`
+3. Add `SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;` at the top
+4. Change `CREATE PROCEDURE` to `CREATE OR ALTER PROCEDURE`
+5. Deploy the fixed version
+6. Commit the fixed file to repo
+
+```bash
+# Create fixed procedure file
+cd src/StoredProcedures
+cat > <procedure>_fixed.sql << 'EOF'
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+-- Original procedure content with CREATE OR ALTER
+EOF
+
+# Deploy to SQL Server
+docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'TestPass123!' -C \
+  -d FINANCIAL_PLANNING -i /path/to/<procedure>_fixed.sql
+```
 
 **Fix for Msg 266: Create a wrapper that ensures clean transaction state:**
 ```sql
