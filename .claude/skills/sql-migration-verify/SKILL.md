@@ -19,6 +19,26 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 - SQL Server Docker running
 - Test data available (or will be generated)
 
+## Prerequisites
+
+**Snowflake CLI:**
+```bash
+which snow || find /usr -name "snow" 2>/dev/null || find ~/Library -name "snow" 2>/dev/null
+```
+
+If not found, install: `pip install snowflake-cli-labs`
+
+**Docker:** SQL Server container must be running:
+```bash
+docker ps | grep sqlserver
+```
+
+If not running:
+```bash
+docker start sqlserver
+```
+
+
 ---
 
 ## Report Templates by Object Type
