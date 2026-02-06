@@ -1,12 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(/Users/ravikiran/Library/Python/3.9/bin/snow sql -q \"SHOW USER FUNCTIONS IN FINANCIAL_PLANNING.PLANNING\" --format json)",
-      "Bash(/Users/ravikiran/Library/Python/3.9/bin/snow sql:*)",
-      "Bash(docker exec:*)",
-      "Bash(echo:*)",
       "Bash(snow sql:*)",
-      "Bash(snowsql:*)"
+      "Bash(docker exec:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)"
     ]
   }
 }

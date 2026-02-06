@@ -474,7 +474,7 @@ docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
 
 **Snowflake:**
 ```bash
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "<query>"
+snow sql -q "<query>"
 ```
 
 ---

@@ -4,20 +4,26 @@ Migrated `usp_ProcessBudgetConsolidation` - a 510-line stored procedure with cur
 
 ## Quick Start
 
-### 1. Install skills as Claude Code plugins
+### 1. Clone and open in Claude Code
 
 ```bash
-git clone https://github.com/rkethamakka/openclaw-skills.git
-# Add to Claude Code as plugins
+git clone https://github.com/rkethamakka/snowflake_sql_migration_test.git
+cd snowflake_sql_migration_test
+claude
 ```
 
-### 2. Run skills in order
+Skills are bundled in `.claude/skills/` and load automatically.
 
-```bash
-/sql-migration-planner src/StoredProcedures/usp_ProcessBudgetConsolidation.sql
-/sql-migration deploy to Snowflake
-/test-data-generator generate for both systems
-/sql-migration-verify run side-by-side comparison
+### 2. Run the migration workflow
+
+```
+Read .claude/skills/sql-migration-planner/SKILL.md and analyze src/StoredProcedures/usp_ProcessBudgetConsolidation.sql
+
+Deploy to Snowflake following .claude/skills/sql-migration/SKILL.md
+
+Generate test data using .claude/skills/test-data-generator/SKILL.md
+
+Verify migration using .claude/skills/sql-migration-verify/SKILL.md
 ```
 
 ### 3. View results
@@ -41,9 +47,16 @@ Found an order-of-operations bug during verification: elimination logic was runn
 ## Files
 
 ```
+.claude/skills/                                          ← Migration skills (auto-loaded)
 snowflake/procedures/usp_ProcessBudgetConsolidation.sql  ← Main deliverable
 test/results/QUICK_VERIFICATION.md                       ← Test results
 ```
+
+## Prerequisites
+
+- Snowflake CLI (`snow`) installed and configured
+- Docker with SQL Server container (for verification)
+- Claude Code
 
 ## AI Usage
 

@@ -54,23 +54,23 @@ For object in [Tables → Functions → Views → Procedure]:
 ### Step 2: Check If Object Exists
 ```bash
 # For tables
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "
+snow sql -q "
   SELECT COUNT(*) as cnt FROM FINANCIAL_PLANNING.INFORMATION_SCHEMA.TABLES 
   WHERE TABLE_SCHEMA = 'PLANNING' AND TABLE_NAME = '<OBJECT_NAME>'
 "
 
 # For functions
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "
+snow sql -q "
   SHOW USER FUNCTIONS LIKE '<FUNCTION_NAME>' IN FINANCIAL_PLANNING.PLANNING
 "
 
 # For views
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "
+snow sql -q "
   SHOW VIEWS LIKE '<VIEW_NAME>' IN FINANCIAL_PLANNING.PLANNING
 "
 
 # For procedures
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "
+snow sql -q "
   SHOW PROCEDURES LIKE '<PROCEDURE_NAME>' IN FINANCIAL_PLANNING.PLANNING
 "
 ```
@@ -84,13 +84,13 @@ Apply rules in order:
 
 ### Step 4: Deploy to Snowflake
 ```bash
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -f snowflake/<Category>/<Object>.sql
+snow sql -f snowflake/<Category>/<Object>.sql
 ```
 
 ### Step 5: Verify Deployment
 ```bash
 # Confirm object now exists
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "DESCRIBE TABLE PLANNING.<table>"
+snow sql -q "DESCRIBE TABLE PLANNING.<table>"
 ```
 
 ---

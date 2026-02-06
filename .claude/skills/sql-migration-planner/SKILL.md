@@ -40,10 +40,10 @@ Look for dependency header comment:
 
 ### Step 2: Check Snowflake State
 ```bash
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "SHOW TABLES IN FINANCIAL_PLANNING.PLANNING"
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "SHOW USER FUNCTIONS IN FINANCIAL_PLANNING.PLANNING"
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "SHOW VIEWS IN FINANCIAL_PLANNING.PLANNING"
-/Users/ravikiran/Library/Python/3.9/bin/snow sql -q "SHOW PROCEDURES IN FINANCIAL_PLANNING.PLANNING"
+snow sql -q "SHOW TABLES IN FINANCIAL_PLANNING.PLANNING"
+snow sql -q "SHOW USER FUNCTIONS IN FINANCIAL_PLANNING.PLANNING"
+snow sql -q "SHOW VIEWS IN FINANCIAL_PLANNING.PLANNING"
+snow sql -q "SHOW PROCEDURES IN FINANCIAL_PLANNING.PLANNING"
 ```
 
 ### Step 3: Check SQL Server State
