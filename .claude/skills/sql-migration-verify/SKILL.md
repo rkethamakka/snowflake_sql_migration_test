@@ -34,6 +34,63 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 
 ---
 
+## Fallback: SQL Server Procedure Failure
+
+**When SQL Server procedure fails** (transaction errors, missing dependencies, etc.):
+
+### Detection
+```bash
+# Run procedure and check for errors
+docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd ... -Q "
+  BEGIN TRY
+    EXEC Planning.usp_<procedure> @Param = 1;
+    SELECT 'SUCCESS' as status;
+  END TRY
+  BEGIN CATCH
+    SELECT 'FAILED' as status, ERROR_MESSAGE() as error;
+  END CATCH
+"
+```
+
+### Fallback Workflow
+If SQL Server procedure fails:
+
+1. **Document the failure** in verification report
+2. **Compare SOURCE data** instead of consolidated output:
+   ```sql
+   -- SQL Server source
+   SELECT CostCenterID, GLAccountID, SUM(OriginalAmount) as total
+   FROM Planning.BudgetLineItem WHERE BudgetHeaderID = 1
+   GROUP BY CostCenterID, GLAccountID;
+   
+   -- Snowflake source (same query)
+   SELECT CostCenterID, GLAccountID, SUM(OriginalAmount) as total
+   FROM PLANNING.BudgetLineItem WHERE BudgetHeaderID = 1
+   GROUP BY CostCenterID, GLAccountID;
+   ```
+3. **Verify source data is identical** (proves input match)
+4. **Run Snowflake procedure** and verify against expected business logic
+5. **Report clearly** that SQL Server proc couldn't run, but Snowflake verified via logic
+
+### Report Template (Fallback Mode)
+```markdown
+## SQL Server Execution
+Status: ❌ FAILED
+Error: <error message>
+Fallback: Comparing source data + Snowflake business logic verification
+
+## Source Data Comparison
+| Metric | SQL Server | Snowflake | Match |
+|--------|------------|-----------|-------|
+| Row count | X | X | ✅ |
+| Total amount | $X | $X | ✅ |
+
+## Snowflake Verification (Business Logic)
+<standard verification against expected results>
+```
+
+---
+
 ## Workflow
 
 ### Step 1: Ensure SQL Server Has Objects
