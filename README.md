@@ -2,16 +2,33 @@
 
 Migrated `usp_ProcessBudgetConsolidation` - a 510-line stored procedure with cursors, hierarchy rollups, and intercompany eliminations.
 
-## Quick Start (OpenClaw Skills)
+## Quick Start
 
-Run these skills in order:
+### 1. Load the skills into Claude Code
+
+```bash
+git clone https://github.com/rkethamakka/openclaw-skills.git
+```
+
+Then tell Claude: "Read the SKILL.md files in openclaw-skills/sql-migration*"
+
+### 2. Run skills in order
 
 ```
-1. sql-migration-planner  → Analyze source, generate migration plan
-2. sql-migration          → Deploy tables, functions, views, procedures to Snowflake
-3. test-data-generator    → Generate matching test data for both systems
-4. sql-migration-verify   → Run side-by-side comparison, generate report
+"Analyze src/StoredProcedures/usp_ProcessBudgetConsolidation.sql and create a migration plan"
+→ Uses sql-migration-planner
+
+"Deploy the migration to Snowflake"
+→ Uses sql-migration
+
+"Generate test data for both SQL Server and Snowflake"
+→ Uses test-data-generator
+
+"Verify the migration with side-by-side comparison"
+→ Uses sql-migration-verify
 ```
+
+### 3. View results
 
 **Results:** [test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
 
