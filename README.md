@@ -4,33 +4,25 @@ Migrated `usp_ProcessBudgetConsolidation` - a 510-line stored procedure with cur
 
 ## Quick Start
 
-### 1. Load the skills into Claude Code
+### 1. Install skills as Claude Code plugins
 
 ```bash
 git clone https://github.com/rkethamakka/openclaw-skills.git
+# Add to Claude Code as plugins
 ```
-
-Then tell Claude: "Read the SKILL.md files in openclaw-skills/sql-migration*"
 
 ### 2. Run skills in order
 
-```
-"Analyze src/StoredProcedures/usp_ProcessBudgetConsolidation.sql and create a migration plan"
-→ Uses sql-migration-planner
-
-"Deploy the migration to Snowflake"
-→ Uses sql-migration
-
-"Generate test data for both SQL Server and Snowflake"
-→ Uses test-data-generator
-
-"Verify the migration with side-by-side comparison"
-→ Uses sql-migration-verify
+```bash
+/sql-migration-planner src/StoredProcedures/usp_ProcessBudgetConsolidation.sql
+/sql-migration deploy to Snowflake
+/test-data-generator generate for both systems
+/sql-migration-verify run side-by-side comparison
 ```
 
 ### 3. View results
 
-**Results:** [test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
+[test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
 
 ## What Changed
 
