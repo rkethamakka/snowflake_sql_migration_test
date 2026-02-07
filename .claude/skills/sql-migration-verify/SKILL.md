@@ -14,11 +14,21 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 - User says "verify", "compare", or "test migration"
 - Called by sql-migration skill after deployment (optional)
 
-## Output
-- Verification report: `test/results/VERIFICATION_SUMMARY.md`
-- Side-by-side execution comparison
-- Business logic validation
-- Schema compatibility check
+## Output Files (STRICT)
+
+**ONLY create this file:**
+- `test/results/VERIFICATION_SUMMARY.md` (verification report with side-by-side comparison, keep under 60 lines)
+
+**DO NOT create:**
+- ❌ Any other .md files (no detailed reports, no investigation guides, no analysis documents)
+- ❌ Any SQL scripts
+- ❌ Any helper files
+
+The skill must create ONLY the ONE verification summary report. Keep it concise (under 60 lines) with:
+- Execution status
+- Business logic validation (hierarchy rollup, IC elimination)
+- Key findings
+- Conclusion
 
 ## Prerequisites
 - Snowflake has migrated objects

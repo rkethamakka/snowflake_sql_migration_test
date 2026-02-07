@@ -26,8 +26,17 @@ If not found, install: `pip install snowflake-cli-labs`
 ## Input
 Procedure name (e.g., `usp_ProcessBudgetConsolidation`)
 
-## Output
-Structured migration plan saved to: `migration-plans/<procedure_name>.md`
+## Output Files (STRICT)
+
+**ONLY create this file:**
+- `migration-plans/<procedure_name>.md` (migration plan with dependencies and complexity analysis)
+
+**DO NOT create:**
+- ❌ Any summary or report .md files
+- ❌ Any documentation files
+- ❌ Any helper scripts
+
+The skill must create ONLY the ONE migration plan file.
 
 ---
 

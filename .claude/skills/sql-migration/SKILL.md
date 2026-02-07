@@ -28,10 +28,20 @@ If not found, install: `pip install snowflake-cli-labs`
 - **Option A:** Procedure name → runs planner first, then migrates
 - **Option B:** Migration plan file → `migration-plans/<procedure>.md`
 
-## Output
-- Translated DDL saved to `snowflake/<Category>/`
-- Deployed to Snowflake
-- Status updated in migration plan
+## Output Files (STRICT)
+
+**ONLY create these files:**
+- `snowflake/tables/*.sql` (translated table DDL)
+- `snowflake/functions/*.sql` (translated function DDL)
+- `snowflake/views/*.sql` (translated view DDL)
+- `snowflake/procedures/*.sql` (translated procedure DDL)
+
+**DO NOT create:**
+- ❌ Any .md documentation files (no summaries, no deployment reports, no translation guides)
+- ❌ Any Python scripts or helper files
+- ❌ Any extra files beyond the SQL DDL files
+
+The skill must create ONLY the translated SQL files needed for deployment.
 
 ## Key Behavior
 - **Check before migrate:** If object already exists in Snowflake, SKIP and report

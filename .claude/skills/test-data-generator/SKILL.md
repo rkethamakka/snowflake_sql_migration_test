@@ -32,9 +32,19 @@ docker ps | grep sqlserver
 - Migration plan file (to know what tables exist)
 - Or explicit list of tables
 
-## Output
-- `test/data/snowflake/<procedure>_setup.sql`
-- `test/data/sqlserver/<procedure>_setup.sql`
+## Output Files (STRICT)
+
+**ONLY create these 2 files:**
+- `test/data/snowflake/<procedure>_setup.sql` (Snowflake test data with DELETE + INSERT statements)
+- `test/data/sqlserver/<procedure>_setup.sql` (SQL Server test data with IDENTITY_INSERT and hierarchyid::Parse())
+
+**DO NOT create:**
+- ❌ Any .md documentation files (no summaries, no completion reports, no data catalogs)
+- ❌ Any Python scripts or loaders
+- ❌ Any extra .sql files (no load_data.sql, no load_glaccounts.sql, etc.)
+- ❌ Any helper files
+
+The skill must create ONLY the 2 test data setup files.
 
 ---
 
