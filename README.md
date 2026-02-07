@@ -1,6 +1,17 @@
 # SQL Server → Snowflake Migration
 
-Migrated `usp_ProcessBudgetConsolidation` - a 510-line stored procedure with cursors, hierarchy rollups, and intercompany eliminations.
+Migrating complex SQL Server stored procedures to Snowflake using reusable AI skills.
+
+## Procedures
+
+| Procedure | Lines | Status | Key Challenges |
+|-----------|-------|--------|----------------|
+| usp_ProcessBudgetConsolidation | 510 | ✅ Verified | Cursors, hierarchy rollups, IC eliminations |
+| usp_ExecuteCostAllocation | 428 | ✅ Verified | GOTO, app locks, recursive CTE, WAITFOR |
+| usp_BulkImportBudgetData | 519 | ⚠️ Deployed | BULK INSERT, TVP, dynamic SQL |
+| usp_GenerateRollingForecast | 440 | ⚠️ Deployed | Dynamic PIVOT, statistical functions |
+| usp_ReconcileIntercompanyBalances | 373 | ⚠️ Deployed | XML operations, HASHBYTES |
+| usp_PerformFinancialClose | 521 | ⚠️ Deployed | Orchestration, nested proc calls |
 
 ## Quick Start
 
@@ -30,7 +41,11 @@ Skills are bundled in `.claude/skills/` and load automatically.
 
 ### 3. View results
 
-[test/results/VERIFICATION_SUMMARY.md](test/results/VERIFICATION_SUMMARY.md)
+| Procedure | Verification |
+|-----------|--------------|
+| usp_ProcessBudgetConsolidation | [VERIFICATION_SUMMARY_usp_ProcessBudgetConsolidation.md](test/results/VERIFICATION_SUMMARY_usp_ProcessBudgetConsolidation.md) |
+| usp_ExecuteCostAllocation | [VERIFICATION_SUMMARY_usp_ExecuteCostAllocation.md](test/results/VERIFICATION_SUMMARY_usp_ExecuteCostAllocation.md) |
+| **All Procedures** | [VERIFICATION_SUMMARY_ALL_PROCEDURES.md](test/results/VERIFICATION_SUMMARY_ALL_PROCEDURES.md) |
 
 ## Performance Benchmark (One Stored Procedure)
 
@@ -88,8 +103,17 @@ Found an order-of-operations bug during verification: elimination logic was runn
 
 ```
 .claude/skills/                                          ← Migration skills (auto-loaded)
-snowflake/procedures/usp_ProcessBudgetConsolidation.sql  ← Main deliverable
-test/results/VERIFICATION_SUMMARY.md                     ← Test results
+snowflake/procedures/                                    ← Migrated stored procedures
+  usp_ProcessBudgetConsolidation.sql
+  usp_ExecuteCostAllocation.sql
+migration-plans/                                         ← Analysis and migration plans
+  usp_ProcessBudgetConsolidation.md
+  usp_ExecuteCostAllocation.md
+test/results/                                            ← Verification reports (per procedure)
+  VERIFICATION_SUMMARY_usp_ProcessBudgetConsolidation.md
+  VERIFICATION_SUMMARY_usp_ExecuteCostAllocation.md
+test/data/snowflake/                                     ← Test data (per procedure)
+test/data/sqlserver/
 scripts/sync-skills.sh                                   ← Sync skills to OpenClaw
 ```
 

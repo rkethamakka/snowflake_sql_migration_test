@@ -17,18 +17,22 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 ## Output Files (STRICT)
 
 **ONLY create this file:**
-- `test/results/VERIFICATION_SUMMARY.md` (verification report with side-by-side comparison, keep under 60 lines)
+- `test/results/VERIFICATION_SUMMARY_<procedure>.md` (procedure-specific verification report)
+
+Example: `VERIFICATION_SUMMARY_usp_ProcessBudgetConsolidation.md`
 
 **DO NOT create:**
-- ❌ Any other .md files (no detailed reports, no investigation guides, no analysis documents)
+- ❌ Any other .md files (no detailed reports, no investigation guides)
 - ❌ Any SQL scripts
 - ❌ Any helper files
 
-The skill must create ONLY the ONE verification summary report. Keep it concise (under 60 lines) with:
+Keep reports concise (under 60 lines) with:
 - Execution status
-- Business logic validation (hierarchy rollup, IC elimination)
+- Business logic validation
 - Key findings
 - Conclusion
+
+**Why procedure-specific files?** Allows running multiple procedures without overwriting results.
 
 ## Prerequisites
 - Snowflake has migrated objects

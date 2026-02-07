@@ -211,3 +211,59 @@ for f in snowflake/tables/*.sql; do snow sql -f "$f"; done
 ```bash
 snow sql -q "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='PLANNING' AND TABLE_NAME='BUDGETHEADER'"
 ```
+
+---
+
+## JavaScript Stored Procedure Gotchas (Lessons Learned)
+
+### 1. ResultSet vs Statement Pattern
+**WRONG:**
+```javascript
+function executeSQL(sql, binds) {
+    var stmt = snowflake.createStatement({sqlText: sql, binds: binds || []});
+    stmt.execute();
+    return stmt;  // ❌ Returns Statement, not ResultSet
+}
+var rs = executeSQL('SELECT ...');
+rs.next();  // ❌ Error: stmt.next is not a function
+```
+
+**CORRECT:**
+```javascript
+function executeSQL(sql, binds) {
+    var stmt = snowflake.createStatement({sqlText: sql, binds: binds || []});
+    var rs = stmt.execute();  // execute() returns ResultSet
+    rs.getNumRowsAffected = function() { return stmt.getNumRowsAffected(); };
+    return rs;  // ✅ Returns ResultSet with statement methods attached
+}
+```
+
+### 2. Boolean Parameter Comparison
+**WRONG:**
+```javascript
+if (INCLUDE_ELIMINATIONS === true) {  // ❌ May not work with BOOLEAN params
+```
+
+**CORRECT:**
+```javascript
+if (INCLUDE_ELIMINATIONS) {  // ✅ Truthy check works
+```
+
+### 3. Database Context in Procedures
+Procedures called via `CALL` may not have database context set.
+
+**Add at procedure start:**
+```javascript
+executeSQL('USE DATABASE FINANCIAL_PLANNING');
+executeSQL('USE SCHEMA PLANNING');
+```
+
+### 4. Temp Table Creation
+Temp tables require database context. Always set `USE DATABASE` before creating temp tables.
+
+### 5. Column Name Case Sensitivity
+Snowflake column names are UPPERCASE by default. Use uppercase in queries:
+```sql
+SELECT BUDGETHEADERID FROM PLANNING.BUDGETHEADER  -- ✅
+SELECT BudgetHeaderID FROM Planning.BudgetHeader  -- ❌ May fail
+```
