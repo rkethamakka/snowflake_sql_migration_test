@@ -14,6 +14,12 @@ Compare SQL Server vs Snowflake to verify migration correctness.
 - User says "verify", "compare", or "test migration"
 - Called by sql-migration skill after deployment (optional)
 
+## Output
+- Verification report: `test/results/VERIFICATION_SUMMARY.md`
+- Side-by-side execution comparison
+- Business logic validation
+- Schema compatibility check
+
 ## Prerequisites
 - Snowflake has migrated objects
 - SQL Server Docker running
@@ -145,7 +151,7 @@ EOF
 
 # Deploy to SQL Server
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -i /path/to/<procedure>_fixed.sql
 ```
 
@@ -245,20 +251,29 @@ Result: <success/failure>
 
 ## Workflow
 
+### Step 0: Setup Environment
+
+**IMPORTANT:** Ensure snow CLI is in PATH for all Bash commands:
+
+Every Bash command that uses `snow` must include PATH setup:
+```bash
+export PATH="$PATH:$HOME/Library/Python/3.9/bin" && snow sql -q "..."
+```
+
 ### Step 1: Ensure SQL Server Has Objects
 
 For each object in migration plan:
 ```bash
 # Check if exists
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -Q "
   SELECT OBJECT_ID('Planning.<object>')
 "
 
 # If NULL (not exists), deploy from src/
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -Q "<content of src/.../<object>.sql>"
 ```
 
@@ -488,7 +503,7 @@ ORDER BY GLAccountID, CostCenterID, FiscalPeriodID;
 **SQL Server:**
 ```bash
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -Q "<query>"
 ```
 

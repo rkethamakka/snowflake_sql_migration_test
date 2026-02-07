@@ -2,34 +2,36 @@
     fn_GetHierarchyPath - Builds the full hierarchy path string for a cost center
     Dependencies: CostCenter
 
-    Snowflake Migration Notes:
-    - Scalar function with WHILE loop → JavaScript UDF
-    - SQL Server recursive pattern → JavaScript iteration
-    - NVARCHAR → STRING
-    - Better approach: Use recursive CTE instead of function, but keeping for compatibility
+    Translation notes:
+    - Scalar UDF with WHILE loop → JavaScript UDF
+    - NVARCHAR → VARCHAR (Snowflake VARCHAR is Unicode)
+    - Variable declarations become JavaScript variables
+    - SQL queries via snowflake.createStatement()
 */
-CREATE OR REPLACE FUNCTION FINANCIAL_PLANNING.PLANNING.fn_GetHierarchyPath(
-    COST_CENTER_ID FLOAT,
-    DELIMITER STRING
+
+USE DATABASE FINANCIAL_PLANNING;
+USE SCHEMA PLANNING;
+
+CREATE OR REPLACE FUNCTION PLANNING.fn_GetHierarchyPath(
+    CostCenterID FLOAT,
+    Delimiter VARCHAR
 )
-RETURNS STRING
+RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 AS
 $$
-    if (DELIMITER === null || DELIMITER === undefined) {
-        DELIMITER = ' > ';
-    }
-
+    // Default delimiter if not provided
+    var delimiter = DELIMITER || ' > ';
     var path = '';
-    var currentId = COST_CENTER_ID;
+    var currentId = COSTCENTERID;
     var depth = 0;
-    var maxDepth = 20;  // Prevent infinite loops
+    var maxDepth = 20; // Prevent infinite loops
 
     // Traverse up the hierarchy
-    while (currentId !== null && depth < maxDepth) {
+    while (currentId != null && depth < maxDepth) {
         var stmt = snowflake.createStatement({
             sqlText: `SELECT CostCenterName, ParentCostCenterID
-                      FROM FINANCIAL_PLANNING.PLANNING.CostCenter
+                      FROM PLANNING.CostCenter
                       WHERE CostCenterID = :1`,
             binds: [currentId]
         });
@@ -43,15 +45,15 @@ $$
             if (path === '') {
                 path = name;
             } else {
-                path = name + DELIMITER + path;
+                path = name + delimiter + path;
             }
 
             currentId = parentId;
+            depth++;
         } else {
-            break;
+            // No record found, exit loop
+            currentId = null;
         }
-
-        depth++;
     }
 
     return path;

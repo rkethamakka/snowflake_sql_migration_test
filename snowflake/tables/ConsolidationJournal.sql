@@ -1,62 +1,55 @@
 /*
     ConsolidationJournal - Journal entries for consolidation adjustments
-    Dependencies: BudgetHeader, GLAccount, CostCenter, FiscalPeriod
+    Dependencies: BudgetHeader, FiscalPeriod
 
-    Snowflake Migration Notes:
-    - BIGINT IDENTITY → INTEGER AUTOINCREMENT
-    - NVARCHAR → VARCHAR
-    - BIT → BOOLEAN
-    - DECIMAL(19,4) → NUMBER(19,4)
-    - DATETIME2(7) → TIMESTAMP_NTZ
-    - Computed column IsBalanced → Cannot create as computed, would need view or materialized column
-    - VARBINARY(MAX) FILESTREAM → BINARY (no FILESTREAM equivalent, use stages)
-    - UNIQUEIDENTIFIER ROWGUIDCOL → VARCHAR(36) with UUID_STRING()
-    - NEWSEQUENTIALID() → UUID_STRING()
-    - Indexes converted to comments (Snowflake auto-optimizes)
+    Translation notes:
+    - Computed column (IsBalanced) removed
+    - FILESTREAM → Removed (no equivalent, store externally or as VARIANT)
+    - ROWGUIDCOL → Removed
+    - NEWSEQUENTIALID() → Use UUID_STRING() when inserting
 */
-CREATE TABLE IF NOT EXISTS FINANCIAL_PLANNING.PLANNING.ConsolidationJournal (
-    JournalID               INTEGER AUTOINCREMENT PRIMARY KEY,
+
+USE DATABASE FINANCIAL_PLANNING;
+USE SCHEMA PLANNING;
+
+CREATE OR REPLACE TABLE PLANNING.ConsolidationJournal (
+    JournalID               NUMBER(38,0) AUTOINCREMENT NOT NULL,
     JournalNumber           VARCHAR(30) NOT NULL,
     JournalType             VARCHAR(20) NOT NULL,  -- ELIMINATION, RECLASSIFICATION, TRANSLATION, ADJUSTMENT
-    BudgetHeaderID          INTEGER NOT NULL,
-    FiscalPeriodID          INTEGER NOT NULL,
+    BudgetHeaderID          NUMBER(38,0) NOT NULL,
+    FiscalPeriodID          NUMBER(38,0) NOT NULL,
     PostingDate             DATE NOT NULL,
-    Description             VARCHAR(500),
+    Description             VARCHAR(500) NULL,
     StatusCode              VARCHAR(15) NOT NULL DEFAULT 'DRAFT',
-    -- Entity tracking for multi-entity consolidation
-    SourceEntityCode        VARCHAR(20),
-    TargetEntityCode        VARCHAR(20),
+    -- Entity tracking
+    SourceEntityCode        VARCHAR(20) NULL,
+    TargetEntityCode        VARCHAR(20) NULL,
     -- Reversal handling
     IsAutoReverse           BOOLEAN NOT NULL DEFAULT FALSE,
-    ReversalPeriodID        INTEGER,
-    ReversedFromJournalID   INTEGER,
+    ReversalPeriodID        NUMBER(38,0) NULL,
+    ReversedFromJournalID   NUMBER(38,0) NULL,
     IsReversed              BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Totals (denormalized for performance)
+    -- Totals (denormalized)
     TotalDebits             NUMBER(19,4) NOT NULL DEFAULT 0,
     TotalCredits            NUMBER(19,4) NOT NULL DEFAULT 0,
-    -- IsBalanced computed column not supported - use view if needed
+    -- IsBalanced computed column removed - calculate as: (TotalDebits = TotalCredits)
     -- Approval workflow
-    PreparedByUserID        INTEGER,
-    PreparedDateTime        TIMESTAMP_NTZ,
-    ReviewedByUserID        INTEGER,
-    ReviewedDateTime        TIMESTAMP_NTZ,
-    ApprovedByUserID        INTEGER,
-    ApprovedDateTime        TIMESTAMP_NTZ,
-    PostedByUserID          INTEGER,
-    PostedDateTime          TIMESTAMP_NTZ,
-    -- Attachments (no FILESTREAM - use Snowflake stages for large files)
-    AttachmentData          BINARY,
-    AttachmentRowGuid       VARCHAR(36) NOT NULL DEFAULT UUID_STRING(),
+    PreparedByUserID        NUMBER(38,0) NULL,
+    PreparedDateTime        TIMESTAMP_NTZ(9) NULL,
+    ReviewedByUserID        NUMBER(38,0) NULL,
+    ReviewedDateTime        TIMESTAMP_NTZ(9) NULL,
+    ApprovedByUserID        NUMBER(38,0) NULL,
+    ApprovedDateTime        TIMESTAMP_NTZ(9) NULL,
+    PostedByUserID          NUMBER(38,0) NULL,
+    PostedDateTime          TIMESTAMP_NTZ(9) NULL,
+    -- FILESTREAM columns removed (no Snowflake equivalent)
+    -- AttachmentData/AttachmentRowGuid removed - store attachments externally
+    CONSTRAINT PK_ConsolidationJournal PRIMARY KEY (JournalID),
     CONSTRAINT UQ_ConsolidationJournal_Number UNIQUE (JournalNumber),
     CONSTRAINT FK_ConsolidationJournal_Header FOREIGN KEY (BudgetHeaderID)
-        REFERENCES FINANCIAL_PLANNING.PLANNING.BudgetHeader (BudgetHeaderID),
+        REFERENCES PLANNING.BudgetHeader (BudgetHeaderID),
     CONSTRAINT FK_ConsolidationJournal_Period FOREIGN KEY (FiscalPeriodID)
-        REFERENCES FINANCIAL_PLANNING.PLANNING.FiscalPeriod (FiscalPeriodID),
-    CONSTRAINT FK_ConsolidationJournal_ReversalPeriod FOREIGN KEY (ReversalPeriodID)
-        REFERENCES FINANCIAL_PLANNING.PLANNING.FiscalPeriod (FiscalPeriodID),
-    CONSTRAINT FK_ConsolidationJournal_ReversedFrom FOREIGN KEY (ReversedFromJournalID)
-        REFERENCES FINANCIAL_PLANNING.PLANNING.ConsolidationJournal (JournalID)
+        REFERENCES PLANNING.FiscalPeriod (FiscalPeriodID),
+    CONSTRAINT FK_ConsolidationJournal_Reversed FOREIGN KEY (ReversedFromJournalID)
+        REFERENCES PLANNING.ConsolidationJournal (JournalID)
 );
-
--- Note: Snowflake does not require explicit indexes - auto-optimizes based on query patterns
--- Original index: IX_ConsolidationJournal_RowGuid on AttachmentRowGuid

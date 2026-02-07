@@ -25,4 +25,4 @@ This project includes custom skills for automated migration.
 
 ## Results
 
-See `test/results/QUICK_VERIFICATION.md` for verification report.
+See `test/results/VERIFICATION_SUMMARY.md` for verification report.

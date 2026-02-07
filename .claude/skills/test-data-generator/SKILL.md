@@ -40,6 +40,15 @@ docker ps | grep sqlserver
 
 ## Workflow
 
+### Step 0: Setup Environment
+
+**IMPORTANT:** Ensure snow CLI is in PATH for all Bash commands:
+
+Every Bash command that uses `snow` must include PATH setup:
+```bash
+export PATH="$PATH:$HOME/Library/Python/3.9/bin" && snow sql -q "..."
+```
+
 ### Step 1: Identify Tables from Migration Plan
 ```bash
 cat migration-plans/<procedure>.md
@@ -57,7 +66,7 @@ snow sql -q "DESCRIBE TABLE FINANCIAL_PLANNING.PLANNING.<TABLE>"
 **SQL Server:**
 ```bash
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -Q "
   SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
   FROM INFORMATION_SCHEMA.COLUMNS
@@ -130,7 +139,7 @@ snow sql -f test/data/snowflake/<procedure>_setup.sql
 ```bash
 cat test/data/sqlserver/<procedure>_setup.sql | \
   docker exec -i sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C -d FINANCIAL_PLANNING
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C -d FINANCIAL_PLANNING
 ```
 
 ### Step 6: Verify Row Counts
@@ -147,7 +156,7 @@ UNION ALL SELECT 'BudgetLineItem', COUNT(*) FROM PLANNING.BUDGETLINEITEM
 
 # SQL Server
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C -d FINANCIAL_PLANNING -Q "
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C -d FINANCIAL_PLANNING -Q "
 SET QUOTED_IDENTIFIER ON;
 SELECT 'FiscalPeriod' as tbl, COUNT(*) as cnt FROM Planning.FiscalPeriod
 UNION ALL SELECT 'GLAccount', COUNT(*) FROM Planning.GLAccount

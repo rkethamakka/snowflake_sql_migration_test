@@ -17,18 +17,21 @@ Skills are bundled in `.claude/skills/` and load automatically.
 ### 2. Run the migration workflow
 
 ```
-Read .claude/skills/sql-migration-planner/SKILL.md and analyze src/StoredProcedures/usp_ProcessBudgetConsolidation.sql
 
-Deploy to Snowflake following .claude/skills/sql-migration/SKILL.md
+./scripts/full-cleanup.sh
 
-Generate test data using .claude/skills/test-data-generator/SKILL.md
+/sql-migration-planner usp_ProcessBudgetConsolidation
 
-Verify migration using .claude/skills/sql-migration-verify/SKILL.md
+/sql-migration usp_ProcessBudgetConsolidation
+
+/test-data-generator usp_ProcessBudgetConsolidation
+
+/sql-migration-verify usp_ProcessBudgetConsolidation
 ```
 
 ### 3. View results
 
-[test/results/QUICK_VERIFICATION.md](test/results/QUICK_VERIFICATION.md)
+[test/results/VERIFICATION_SUMMARY.md](test/results/VERIFICATION_SUMMARY.md)
 
 ## What Changed
 

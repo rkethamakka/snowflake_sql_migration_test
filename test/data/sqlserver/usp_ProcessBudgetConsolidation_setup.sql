@@ -1,103 +1,192 @@
--- Test Data for usp_ProcessBudgetConsolidation (SQL Server)
--- 40 rows total across 5 tables
+/*
+    Test Data for usp_ProcessBudgetConsolidation - SQL Server
+
+    Test Scenarios:
+    1. Multi-level hierarchy: Corporate → Engineering/Sales/Marketing → Sub-departments
+    2. IC Elimination: Matched pairs (+10K/-10K between Corp<->Eng) and unmatched (Sales +5K)
+    3. Hierarchy Rollup: Verify parent amounts = sum of children
+
+    Expected Results After Consolidation:
+    - Corporate Total (all rolled up): ~$378,000
+    - IC Eliminations: Corp/Eng matched pair = $0, Sales unmatched = $5K preserved
+*/
 
 USE FINANCIAL_PLANNING;
 GO
 
--- Enable identity inserts
-SET IDENTITY_INSERT Planning.FiscalPeriod ON;
-SET IDENTITY_INSERT Planning.GLAccount ON;
-SET IDENTITY_INSERT Planning.CostCenter ON;
-SET IDENTITY_INSERT Planning.BudgetHeader ON;
+SET QUOTED_IDENTIFIER ON;
+SET NOCOUNT ON;
+GO
 
--- FiscalPeriod (12 rows)
-INSERT INTO Planning.FiscalPeriod (FiscalPeriodID, FiscalYear, FiscalQuarter, FiscalMonth, PeriodName, PeriodStartDate, PeriodEndDate, IsActive)
-VALUES
-(1, 2024, 1, 1, 'Jan 2024', '2024-01-01', '2024-01-31', 1),
-(2, 2024, 1, 2, 'Feb 2024', '2024-02-01', '2024-02-29', 1),
-(3, 2024, 1, 3, 'Mar 2024', '2024-03-01', '2024-03-31', 1),
-(4, 2024, 2, 4, 'Apr 2024', '2024-04-01', '2024-04-30', 1),
-(5, 2024, 2, 5, 'May 2024', '2024-05-01', '2024-05-31', 1),
-(6, 2024, 2, 6, 'Jun 2024', '2024-06-01', '2024-06-30', 1),
-(7, 2024, 3, 7, 'Jul 2024', '2024-07-01', '2024-07-31', 1),
-(8, 2024, 3, 8, 'Aug 2024', '2024-08-01', '2024-08-31', 1),
-(9, 2024, 3, 9, 'Sep 2024', '2024-09-01', '2024-09-30', 1),
-(10, 2024, 4, 10, 'Oct 2024', '2024-10-01', '2024-10-31', 1),
-(11, 2024, 4, 11, 'Nov 2024', '2024-11-01', '2024-11-30', 1),
-(12, 2024, 4, 12, 'Dec 2024', '2024-12-01', '2024-12-31', 1);
+-- Clear existing data (reverse FK order)
+DELETE FROM Planning.BudgetLineItem;
+DELETE FROM Planning.BudgetHeader;
+DELETE FROM Planning.CostCenter;
+DELETE FROM Planning.GLAccount;
+DELETE FROM Planning.FiscalPeriod;
+GO
+
+-- =============================
+-- Reference Data: FiscalPeriod
+-- =============================
+SET IDENTITY_INSERT Planning.FiscalPeriod ON;
+
+INSERT INTO Planning.FiscalPeriod (
+    FiscalPeriodID, FiscalYear, FiscalQuarter, FiscalMonth, PeriodName,
+    PeriodStartDate, PeriodEndDate, IsClosed, IsAdjustmentPeriod, WorkingDays,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(1, 2024, 1, 1, N'Jan 2024', '2024-01-01', '2024-01-31', 0, 0, 22, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(2, 2024, 1, 2, N'Feb 2024', '2024-02-01', '2024-02-29', 0, 0, 20, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(3, 2024, 1, 3, N'Mar 2024', '2024-03-01', '2024-03-31', 0, 0, 21, SYSUTCDATETIME(), SYSUTCDATETIME());
 
 SET IDENTITY_INSERT Planning.FiscalPeriod OFF;
+GO
 
--- GLAccount (6 rows)
-INSERT INTO Planning.GLAccount (GLAccountID, AccountNumber, AccountName, AccountType, IsPostable, IsBudgetable, IntercompanyFlag, NormalBalance, IsActive)
-VALUES
-(1, '4000', 'Revenue', 'R', 1, 1, 0, 'C', 1),
-(2, '5000', 'Cost of Sales', 'E', 1, 1, 0, 'D', 1),
-(3, '6000', 'Operating Expenses', 'E', 1, 1, 0, 'D', 1),
-(4, '7000', 'Admin Expenses', 'E', 1, 1, 0, 'D', 1),
-(5, '8000', 'Other Income', 'R', 1, 1, 0, 'C', 1),
-(6, '9000', 'Intercompany', 'E', 1, 1, 1, 'D', 1);
+-- =============================
+-- Reference Data: GLAccount
+-- =============================
+SET IDENTITY_INSERT Planning.GLAccount ON;
+
+INSERT INTO Planning.GLAccount (
+    GLAccountID, AccountNumber, AccountName, AccountType, AccountLevel,
+    IsPostable, IsBudgetable, NormalBalance, IntercompanyFlag, IsActive,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(1, '4000', N'Revenue', 'R', 1, 1, 1, 'C', 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(2, '5000', N'Cost of Sales', 'X', 1, 1, 1, 'D', 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(3, '6000', N'Operating Expenses', 'X', 1, 1, 1, 'D', 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(4, '7000', N'Administrative', 'X', 1, 1, 1, 'D', 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(5, '8000', N'Marketing Expenses', 'X', 1, 1, 1, 'D', 0, 1, SYSUTCDATETIME(), SYSUTCDATETIME()),
+-- Intercompany account
+(6, '9000', N'Intercompany Receivable', 'A', 1, 1, 0, 'D', 1, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
 
 SET IDENTITY_INSERT Planning.GLAccount OFF;
+GO
 
--- CostCenter (7 rows)
-INSERT INTO Planning.CostCenter (CostCenterID, CostCenterCode, CostCenterName, ParentCostCenterID, IsActive, EffectiveFromDate, EffectiveToDate)
-VALUES
-(1, 'CORP', 'Corporate', NULL, 1, '2024-01-01', NULL),
-(2, 'ENG', 'Engineering', 1, 1, '2024-01-01', NULL),
-(3, 'SALES', 'Sales', 1, 1, '2024-01-01', NULL),
-(4, 'MKT', 'Marketing', 1, 1, '2024-01-01', NULL),
-(5, 'ENG-BE', 'Backend Team', 2, 1, '2024-01-01', NULL),
-(6, 'ENG-FE', 'Frontend Team', 2, 1, '2024-01-01', NULL),
-(7, 'SALES-W', 'Sales West', 3, 1, '2024-01-01', NULL);
+-- =============================
+-- Reference Data: CostCenter (Hierarchy)
+-- =============================
+SET IDENTITY_INSERT Planning.CostCenter ON;
+
+-- Level 0: Corporate (root)
+INSERT INTO Planning.CostCenter (
+    CostCenterID, CostCenterCode, CostCenterName, ParentCostCenterID,
+    HierarchyPath, HierarchyLevel, IsActive, EffectiveFromDate, AllocationWeight,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(1, 'CORP', N'Corporate', NULL, '/1/', 0, 1, '2024-01-01', 1.0000, SYSUTCDATETIME(), SYSUTCDATETIME());
+
+-- Level 1: Departments
+INSERT INTO Planning.CostCenter (
+    CostCenterID, CostCenterCode, CostCenterName, ParentCostCenterID,
+    HierarchyPath, HierarchyLevel, IsActive, EffectiveFromDate, AllocationWeight,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(2, 'ENG', N'Engineering', 1, '/1/2/', 1, 1, '2024-01-01', 1.0000, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(3, 'SALES', N'Sales', 1, '/1/3/', 1, 1, '2024-01-01', 1.0000, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(4, 'MKT', N'Marketing', 1, '/1/4/', 1, 1, '2024-01-01', 1.0000, SYSUTCDATETIME(), SYSUTCDATETIME());
+
+-- Level 2: Sub-departments
+INSERT INTO Planning.CostCenter (
+    CostCenterID, CostCenterCode, CostCenterName, ParentCostCenterID,
+    HierarchyPath, HierarchyLevel, IsActive, EffectiveFromDate, AllocationWeight,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(5, 'ENG-BE', N'Engineering - Backend', 2, '/1/2/5/', 2, 1, '2024-01-01', 0.6000, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(6, 'ENG-FE', N'Engineering - Frontend', 2, '/1/2/6/', 2, 1, '2024-01-01', 0.4000, SYSUTCDATETIME(), SYSUTCDATETIME()),
+(7, 'SALES-W', N'Sales - West Region', 3, '/1/3/7/', 2, 1, '2024-01-01', 1.0000, SYSUTCDATETIME(), SYSUTCDATETIME());
 
 SET IDENTITY_INSERT Planning.CostCenter OFF;
+GO
 
--- BudgetHeader (1 row)
-INSERT INTO Planning.BudgetHeader (BudgetHeaderID, BudgetCode, BudgetName, BudgetType, ScenarioType, FiscalYear, StartPeriodID, EndPeriodID, StatusCode, VersionNumber)
-VALUES
-(1, 'BUD-2024-001', '2024 Annual Budget', 'ANNUAL', 'BASE', 2024, 1, 12, 'APPROVED', 1);
+-- =============================
+-- Transaction Data: BudgetHeader
+-- =============================
+SET IDENTITY_INSERT Planning.BudgetHeader ON;
+
+INSERT INTO Planning.BudgetHeader (
+    BudgetHeaderID, BudgetCode, BudgetName, BudgetType, ScenarioType,
+    FiscalYear, StartPeriodID, EndPeriodID, StatusCode, VersionNumber,
+    CreatedDateTime, ModifiedDateTime
+) VALUES
+(1, 'BUD-2024-001', N'2024 Annual Budget', 'ANNUAL', 'BASE',
+ 2024, 1, 3, 'APPROVED', 1, SYSUTCDATETIME(), SYSUTCDATETIME());
 
 SET IDENTITY_INSERT Planning.BudgetHeader OFF;
+GO
 
--- BudgetLineItem (20 rows - no identity column)
-INSERT INTO Planning.BudgetLineItem (BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID, OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated, LastModifiedByUserID)
-VALUES
--- Corporate direct amounts
-(1, 1, 1, 1, 50000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 4, 1, 1, 25000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 6, 1, 1, 10000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- =============================
+-- Transaction Data: BudgetLineItem
+-- =============================
+SET IDENTITY_INSERT Planning.BudgetLineItem ON;
 
--- Engineering direct amounts
-(1, 1, 2, 1, 80000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 3, 2, 1, 35000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 6, 2, 1, -10000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Direct amounts (leaf nodes only)
+-- Engineering - Backend (ENG-BE, ID=5): $100K
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(1, 1, 2, 5, 1, 100000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME());
 
--- Sales direct amounts
-(1, 1, 3, 1, 120000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 2, 3, 1, 70000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 6, 3, 1, 5000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Engineering - Frontend (ENG-FE, ID=6): $50K + IC entries
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(2, 1, 2, 6, 1, 50000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME()),
+-- IC: ENG-FE → CORP: -$10K (will be matched with Corporate's +$10K)
+(3, 1, 6, 6, 1, -10000, 0, 'MANUAL', 'IC_ENTRY', 0, SYSUTCDATETIME());
 
--- Marketing direct amounts
-(1, 1, 4, 1, 60000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 3, 4, 1, 45000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Sales - West (SALES-W, ID=7): $75K
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(4, 1, 3, 7, 1, 75000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME());
 
--- Backend Team direct amounts
-(1, 1, 5, 1, 40000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 3, 5, 1, 20000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Marketing (MKT, ID=4): $100K
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(5, 1, 5, 4, 1, 100000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME());
 
--- Frontend Team direct amounts
-(1, 1, 6, 1, 35000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 3, 6, 1, 15000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Corporate (CORP, ID=1): $50K + IC entries
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(6, 1, 4, 1, 1, 50000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME()),
+-- IC: CORP → ENG-FE: +$10K (will be matched with ENG-FE's -$10K) - SHOULD BE ELIMINATED
+(7, 1, 6, 1, 1, 10000, 0, 'MANUAL', 'IC_ENTRY', 0, SYSUTCDATETIME());
 
--- Sales West direct amounts
-(1, 1, 7, 1, 30000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 2, 7, 1, 18000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
+-- Sales (parent SALES, ID=3): $3K direct + IC unmatched
+INSERT INTO Planning.BudgetLineItem (
+    BudgetLineItemID, BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID,
+    OriginalAmount, AdjustedAmount, SpreadMethodCode, SourceSystem, IsAllocated,
+    LastModifiedDateTime
+) VALUES
+(8, 1, 3, 3, 1, 3000, 0, 'MANUAL', 'UPLOAD', 0, SYSUTCDATETIME()),
+-- IC: Sales unmatched (no offsetting entry) - SHOULD BE PRESERVED
+(9, 1, 6, 3, 1, 5000, 0, 'MANUAL', 'IC_ENTRY', 0, SYSUTCDATETIME());
 
--- Additional periods
-(1, 1, 1, 2, 52000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 1, 2, 2, 82000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100),
-(1, 1, 3, 2, 125000, 0, 'MANUAL', 'MANUAL_ENTRY', 0, 100);
+SET IDENTITY_INSERT Planning.BudgetLineItem OFF;
+GO
 
-SELECT 'Test data loaded: 40 rows total' AS Status;
+PRINT 'Test data loaded to SQL Server';
+GO
+
+-- Verify row counts
+SET QUOTED_IDENTIFIER ON;
+SELECT 'FiscalPeriod' as tbl, COUNT(*) as cnt FROM Planning.FiscalPeriod
+UNION ALL SELECT 'GLAccount', COUNT(*) FROM Planning.GLAccount
+UNION ALL SELECT 'CostCenter', COUNT(*) FROM Planning.CostCenter
+UNION ALL SELECT 'BudgetHeader', COUNT(*) FROM Planning.BudgetHeader
+UNION ALL SELECT 'BudgetLineItem', COUNT(*) FROM Planning.BudgetLineItem;
 GO

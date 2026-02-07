@@ -2,8 +2,12 @@
 # Sync skills between project and OpenClaw workspace
 # Usage: ./sync-skills.sh [to-openclaw|from-openclaw]
 
-PROJECT_SKILLS="/Users/RaviKiran/Documents/snowflake_test/.claude/skills"
-OPENCLAW_SKILLS="/Users/ravikiran/.openclaw/workspace/skills"
+# Get project directory dynamically (where script lives)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_SKILLS="$(cd "$SCRIPT_DIR/.." && pwd)/.claude/skills"
+
+# Use HOME for OpenClaw path (portable across users)
+OPENCLAW_SKILLS="$HOME/.openclaw/workspace/skills"
 
 SKILLS="sql-migration-planner sql-migration sql-migration-verify test-data-generator"
 

@@ -2,15 +2,22 @@
     vw_BudgetConsolidationSummary - Consolidated view of budget data with hierarchy rollups
     Dependencies: BudgetHeader, BudgetLineItem, GLAccount, CostCenter, FiscalPeriod
 
-    Snowflake Migration Notes:
-    - WITH SCHEMABINDING → Not supported in Snowflake
-    - COUNT_BIG() → COUNT() (Snowflake COUNT returns BIGINT automatically)
-    - ISNULL() → COALESCE() or NVL()
-    - Indexed view → Regular view (Snowflake doesn't support indexed views, but has auto-optimization)
-    - Materialized views available but require separate CREATE MATERIALIZED VIEW syntax
-    - Note: LocalCurrencyAmount and ReportingCurrencyAmount columns not in current schema
+    Translation notes:
+    - SCHEMABINDING removed (not supported in Snowflake)
+    - COUNT_BIG() → COUNT()
+    - ISNULL() → COALESCE() or IFNULL()
+    - Indexed view → Regular view (indexes removed)
+    - Note: Can be converted to MATERIALIZED VIEW for performance if needed
+
+    For materialized view, change to:
+    CREATE OR REPLACE MATERIALIZED VIEW ...
 */
-CREATE OR REPLACE VIEW FINANCIAL_PLANNING.PLANNING.vw_BudgetConsolidationSummary AS
+
+USE DATABASE FINANCIAL_PLANNING;
+USE SCHEMA PLANNING;
+
+CREATE OR REPLACE VIEW PLANNING.vw_BudgetConsolidationSummary
+AS
 SELECT
     bh.BudgetHeaderID,
     bh.BudgetCode,
@@ -34,12 +41,14 @@ SELECT
     SUM(bli.OriginalAmount) AS TotalOriginalAmount,
     SUM(bli.AdjustedAmount) AS TotalAdjustedAmount,
     SUM(bli.OriginalAmount + bli.AdjustedAmount) AS TotalFinalAmount,
+    SUM(COALESCE(bli.LocalCurrencyAmount, 0)) AS TotalLocalCurrency,
+    SUM(COALESCE(bli.ReportingCurrencyAmount, 0)) AS TotalReportingCurrency,
     COUNT(*) AS LineItemCount
-FROM FINANCIAL_PLANNING.PLANNING.BudgetLineItem bli
-INNER JOIN FINANCIAL_PLANNING.PLANNING.BudgetHeader bh ON bli.BudgetHeaderID = bh.BudgetHeaderID
-INNER JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla ON bli.GLAccountID = gla.GLAccountID
-INNER JOIN FINANCIAL_PLANNING.PLANNING.CostCenter cc ON bli.CostCenterID = cc.CostCenterID
-INNER JOIN FINANCIAL_PLANNING.PLANNING.FiscalPeriod fp ON bli.FiscalPeriodID = fp.FiscalPeriodID
+FROM PLANNING.BudgetLineItem bli
+INNER JOIN PLANNING.BudgetHeader bh ON bli.BudgetHeaderID = bh.BudgetHeaderID
+INNER JOIN PLANNING.GLAccount gla ON bli.GLAccountID = gla.GLAccountID
+INNER JOIN PLANNING.CostCenter cc ON bli.CostCenterID = cc.CostCenterID
+INNER JOIN PLANNING.FiscalPeriod fp ON bli.FiscalPeriodID = fp.FiscalPeriodID
 GROUP BY
     bh.BudgetHeaderID,
     bh.BudgetCode,
@@ -60,7 +69,5 @@ GROUP BY
     cc.CostCenterName,
     cc.ParentCostCenterID;
 
--- Note: Snowflake does not support indexed views
--- Original SQL Server had clustered index: IX_vw_BudgetConsolidationSummary
--- Snowflake auto-optimizes queries based on usage patterns
--- If performance is critical, consider CREATE MATERIALIZED VIEW instead
+-- Note: Indexes on views not supported in Snowflake
+-- Snowflake uses automatic query optimization instead

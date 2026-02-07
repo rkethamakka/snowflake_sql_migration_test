@@ -42,7 +42,16 @@ If not found, install: `pip install snowflake-cli-labs`
 
 ## Workflow
 
-### Step 0: Get Migration Plan
+### Step 0a: Setup Environment
+
+**IMPORTANT:** Ensure snow CLI is in PATH for all Bash commands:
+
+Every Bash command that uses `snow` must include PATH setup:
+```bash
+export PATH="$PATH:$HOME/Library/Python/3.9/bin" && snow sql -q "..."
+```
+
+### Step 0b: Get Migration Plan
 ```
 Check: Does migration-plans/<procedure>.md exist?
   NO  → Run sql-migration-planner skill first

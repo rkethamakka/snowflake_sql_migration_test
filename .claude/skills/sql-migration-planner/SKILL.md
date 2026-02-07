@@ -33,6 +33,15 @@ Structured migration plan saved to: `migration-plans/<procedure_name>.md`
 
 ## Workflow
 
+### Step 0: Setup Environment
+
+**IMPORTANT:** Ensure snow CLI is in PATH for all Bash commands:
+
+Every Bash command that uses `snow` must include PATH setup:
+```bash
+export PATH="$PATH:$HOME/Library/Python/3.9/bin" && snow sql -q "..."
+```
+
 ### Step 1: Read Procedure Source
 ```bash
 cat src/StoredProcedures/<procedure_name>.sql
@@ -60,9 +69,9 @@ snow sql -q "SHOW PROCEDURES IN FINANCIAL_PLANNING.PLANNING"
 ### Step 3: Check SQL Server State
 ```bash
 docker exec sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'TestPass123!' -C \
+  -S localhost -U sa -P 'YourStrong@Passw0rd' -C \
   -d FINANCIAL_PLANNING -Q "
-  SELECT name, type_desc FROM sys.objects 
+  SELECT name, type_desc FROM sys.objects
   WHERE schema_id = SCHEMA_ID('Planning')
   ORDER BY type_desc, name"
 ```
