@@ -9,20 +9,25 @@ export PATH="$PATH:$HOME/Library/Python/3.9/bin"
 
 echo "🧹 Starting full cleanup..."
 
-# Step 1: Clean up Snowflake (test data and procedures)
+# Step 1: Kill and remove SQL Server container
+echo "  → Stopping and removing SQL Server container..."
+docker stop sqlserver 2>/dev/null || true
+docker rm sqlserver 2>/dev/null || true
+
+# Step 2: Clean up Snowflake (test data and procedures)
 echo "  → Cleaning up Snowflake..."
 snow sql -f scripts/cleanup-and-reset.sql
 
-# Step 2: Delete generated verification reports
+# Step 3: Delete generated verification reports
 echo "  → Deleting verification results..."
 rm -f test/results/*.md
 
-# Step 3: Delete generated test data scripts (will be regenerated)
+# Step 4: Delete generated test data scripts (will be regenerated)
 echo "  → Deleting test data scripts..."
 rm -f test/data/snowflake/*.sql
 rm -f test/data/sqlserver/*.sql
 
-# Step 4: Delete migrated Snowflake code (will be regenerated)
+# Step 5: Delete migrated Snowflake code (will be regenerated)
 echo "  → Deleting migrated Snowflake code..."
 rm -f snowflake/tables/*.sql
 rm -f snowflake/views/*.sql

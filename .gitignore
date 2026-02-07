@@ -2,3 +2,8 @@
 *.pyc
 __pycache__/
 .env
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/settings.local.json.backup
+.claude/memory/

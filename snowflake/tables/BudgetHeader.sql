@@ -1,49 +1,42 @@
 /*
     BudgetHeader - Budget version and scenario header
     Dependencies: FiscalPeriod
-
-    Translation notes:
-    - XML → VARIANT (store as JSON)
-    - Computed column (IsLocked) → Remove, calculate in queries
-    - NVARCHAR(MAX) → VARCHAR
-    - XML indexes removed (use VARIANT indexing)
+    Translated from SQL Server to Snowflake
 */
 
+-- Use the correct database
 USE DATABASE FINANCIAL_PLANNING;
-USE SCHEMA PLANNING;
 
-CREATE OR REPLACE TABLE PLANNING.BudgetHeader (
-    BudgetHeaderID          NUMBER(38,0) AUTOINCREMENT NOT NULL,
+-- Drop table if exists to ensure clean deployment
+DROP TABLE IF EXISTS Planning.BudgetHeader;
+
+CREATE TABLE Planning.BudgetHeader (
+    BudgetHeaderID          NUMBER(38,0) NOT NULL AUTOINCREMENT START 1 INCREMENT 1,
     BudgetCode              VARCHAR(30) NOT NULL,
     BudgetName              VARCHAR(100) NOT NULL,
-    BudgetType              VARCHAR(20) NOT NULL,  -- ANNUAL, QUARTERLY, ROLLING, FORECAST
-    ScenarioType            VARCHAR(20) NOT NULL,  -- BASE, OPTIMISTIC, PESSIMISTIC, STRETCH
+    BudgetType              VARCHAR(20) NOT NULL,
+    ScenarioType            VARCHAR(20) NOT NULL,
     FiscalYear              NUMBER(5,0) NOT NULL,
     StartPeriodID           NUMBER(38,0) NOT NULL,
     EndPeriodID             NUMBER(38,0) NOT NULL,
-    BaseBudgetHeaderID      NUMBER(38,0) NULL,  -- For variance calculations
+    BaseBudgetHeaderID      NUMBER(38,0) NULL,
     StatusCode              VARCHAR(15) NOT NULL DEFAULT 'DRAFT',
     SubmittedByUserID       NUMBER(38,0) NULL,
-    SubmittedDateTime       TIMESTAMP_NTZ(9) NULL,
+    SubmittedDateTime       TIMESTAMP_NTZ(7) NULL,
     ApprovedByUserID        NUMBER(38,0) NULL,
-    ApprovedDateTime        TIMESTAMP_NTZ(9) NULL,
-    LockedDateTime          TIMESTAMP_NTZ(9) NULL,
-    -- IsLocked computed column removed - calculate as: (LockedDateTime IS NOT NULL)
+    ApprovedDateTime        TIMESTAMP_NTZ(7) NULL,
+    LockedDateTime          TIMESTAMP_NTZ(7) NULL,
     VersionNumber           NUMBER(38,0) NOT NULL DEFAULT 1,
-    Notes                   VARCHAR NULL,
-    -- XML → VARIANT for flexible metadata storage (store as JSON)
+    Notes                   VARCHAR(16777216) NULL,
     ExtendedProperties      VARIANT NULL,
-    CreatedDateTime         TIMESTAMP_NTZ(9) NOT NULL DEFAULT CURRENT_TIMESTAMP(),
-    ModifiedDateTime        TIMESTAMP_NTZ(9) NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+    CreatedDateTime         TIMESTAMP_NTZ(7) NOT NULL,
+    ModifiedDateTime        TIMESTAMP_NTZ(7) NOT NULL,
     CONSTRAINT PK_BudgetHeader PRIMARY KEY (BudgetHeaderID),
     CONSTRAINT UQ_BudgetHeader_Code_Year UNIQUE (BudgetCode, FiscalYear, VersionNumber),
-    CONSTRAINT FK_BudgetHeader_StartPeriod FOREIGN KEY (StartPeriodID)
-        REFERENCES PLANNING.FiscalPeriod (FiscalPeriodID),
-    CONSTRAINT FK_BudgetHeader_EndPeriod FOREIGN KEY (EndPeriodID)
-        REFERENCES PLANNING.FiscalPeriod (FiscalPeriodID),
-    CONSTRAINT FK_BudgetHeader_BaseBudget FOREIGN KEY (BaseBudgetHeaderID)
-        REFERENCES PLANNING.BudgetHeader (BudgetHeaderID)
-    -- CHECK constraint removed: StatusCode IN (...)
+    CONSTRAINT FK_BudgetHeader_StartPeriod FOREIGN KEY (StartPeriodID) 
+        REFERENCES Planning.FiscalPeriod (FiscalPeriodID),
+    CONSTRAINT FK_BudgetHeader_EndPeriod FOREIGN KEY (EndPeriodID) 
+        REFERENCES Planning.FiscalPeriod (FiscalPeriodID),
+    CONSTRAINT FK_BudgetHeader_BaseBudget FOREIGN KEY (BaseBudgetHeaderID) 
+        REFERENCES Planning.BudgetHeader (BudgetHeaderID)
 );
-
--- XML indexes removed - Snowflake uses automatic optimization for VARIANT queries

@@ -1,101 +1,105 @@
 /*
-    tvf_ExplodeCostCenterHierarchy - Explodes cost center hierarchy
-    Dependencies: CostCenter
-
-    Translation notes:
-    - Multi-statement TVF → SQL table function with recursive CTE
-    - WHILE loop → Recursive CTE (more efficient in Snowflake)
-    - Table variable → CTE result set
-    - @AsOfDate parameter for temporal queries
-    - Returns TABLE instead of inline table definition
+    tvf_ExplodeCostCenterHierarchy - Explode cost center hierarchy
+    
+    SQL Server → Snowflake Translation:
+    - Multi-statement TVF with WHILE loop → SQL table function with recursive CTE
+    - INT → FLOAT (parameters), NUMBER(38,0) (return columns)
+    - BIT → BOOLEAN
+    - DATE → DATE
+    - DECIMAL(18,10) → NUMBER(18,10)
+    - NVARCHAR → VARCHAR
+    - Removed SCHEMABINDING
+    - WHILE loop replaced with recursive CTE
 */
 
-USE DATABASE FINANCIAL_PLANNING;
-USE SCHEMA PLANNING;
-
-CREATE OR REPLACE FUNCTION PLANNING.tvf_ExplodeCostCenterHierarchy(
-    RootCostCenterID FLOAT,
-    MaxDepth FLOAT,
-    IncludeInactive BOOLEAN,
-    AsOfDate DATE
+CREATE OR REPLACE FUNCTION FINANCIAL_PLANNING.PLANNING.TVF_EXPLODECOSTCENTERHIERARCHY(
+    ROOT_COST_CENTER_ID FLOAT,
+    MAX_DEPTH FLOAT,
+    INCLUDE_INACTIVE BOOLEAN,
+    AS_OF_DATE DATE
 )
 RETURNS TABLE (
-    CostCenterID NUMBER(38,0),
-    CostCenterCode VARCHAR(20),
-    CostCenterName VARCHAR(100),
-    ParentCostCenterID NUMBER(38,0),
-    HierarchyLevel NUMBER(38,0),
-    HierarchyPath VARCHAR(500),
-    SortPath VARCHAR(500),
-    IsLeaf BOOLEAN,
-    ChildCount NUMBER(38,0),
-    CumulativeWeight NUMBER(18,10)
+    COSTCENTERID NUMBER(38,0),
+    COSTCENTERCODE VARCHAR(20),
+    COSTCENTERNAME VARCHAR(100),
+    PARENTCOSTCENTERID NUMBER(38,0),
+    HIERARCHYLEVEL NUMBER(38,0),
+    HIERARCHYPATH VARCHAR(500),
+    SORTPATH VARCHAR(500),
+    ISLEAF BOOLEAN,
+    CHILDCOUNT NUMBER(38,0),
+    CUMULATIVEWEIGHT NUMBER(18,10)
 )
 AS
 $$
-    WITH RECURSIVE hierarchy_cte AS (
-        -- Base case: Root level
-        SELECT
-            cc.CostCenterID,
-            cc.CostCenterCode,
-            cc.CostCenterName,
-            cc.ParentCostCenterID,
-            0 AS HierarchyLevel,
-            CAST(cc.CostCenterName AS VARCHAR(500)) AS HierarchyPath,
-            CAST(LPAD(cc.CostCenterID::VARCHAR, 10, '0') AS VARCHAR(500)) AS SortPath,
-            FALSE AS IsLeaf,
-            0 AS ChildCount,
-            cc.AllocationWeight AS CumulativeWeight
-        FROM PLANNING.CostCenter cc
+    WITH RECURSIVE hierarchy AS (
+        -- Root level (anchor member)
+        SELECT 
+            cc.COSTCENTERID,
+            cc.COSTCENTERCODE,
+            cc.COSTCENTERNAME,
+            cc.PARENTCOSTCENTERID,
+            0 AS HIERARCHYLEVEL,
+            CAST(cc.COSTCENTERNAME AS VARCHAR(500)) AS HIERARCHYPATH,
+            CAST(LPAD(cc.COSTCENTERID::VARCHAR, 10, '0') AS VARCHAR(500)) AS SORTPATH,
+            FALSE AS ISLEAF,
+            0 AS CHILDCOUNT,
+            cc.ALLOCATIONWEIGHT AS CUMULATIVEWEIGHT
+        FROM FINANCIAL_PLANNING.PLANNING.COSTCENTER cc
         WHERE (
-                (RootCostCenterID IS NULL AND cc.ParentCostCenterID IS NULL)
-                OR cc.CostCenterID = RootCostCenterID
-              )
-          AND (cc.IsActive = TRUE OR IncludeInactive = TRUE)
-          AND cc.EffectiveFromDate <= COALESCE(AsOfDate, CURRENT_DATE())
-          AND (cc.EffectiveToDate IS NULL OR cc.EffectiveToDate >= COALESCE(AsOfDate, CURRENT_DATE()))
-
+            (ROOT_COST_CENTER_ID IS NULL AND cc.PARENTCOSTCENTERID IS NULL)
+            OR cc.COSTCENTERID = ROOT_COST_CENTER_ID
+        )
+        AND (cc.ISACTIVE = TRUE OR INCLUDE_INACTIVE = TRUE)
+        AND cc.EFFECTIVEFROMDATE <= COALESCE(AS_OF_DATE, CURRENT_DATE())
+        AND (cc.EFFECTIVETODATE IS NULL OR cc.EFFECTIVETODATE >= COALESCE(AS_OF_DATE, CURRENT_DATE()))
+        
         UNION ALL
-
-        -- Recursive case: Children
-        SELECT
-            cc.CostCenterID,
-            cc.CostCenterCode,
-            cc.CostCenterName,
-            cc.ParentCostCenterID,
-            h.HierarchyLevel + 1,
-            h.HierarchyPath || ' > ' || cc.CostCenterName,
-            h.SortPath || '/' || LPAD(cc.CostCenterID::VARCHAR, 10, '0'),
-            FALSE AS IsLeaf,
-            0 AS ChildCount,
-            h.CumulativeWeight * cc.AllocationWeight
-        FROM PLANNING.CostCenter cc
-        INNER JOIN hierarchy_cte h ON cc.ParentCostCenterID = h.CostCenterID
-        WHERE h.HierarchyLevel < MaxDepth - 1
-          AND (cc.IsActive = TRUE OR IncludeInactive = TRUE)
-          AND cc.EffectiveFromDate <= COALESCE(AsOfDate, CURRENT_DATE())
-          AND (cc.EffectiveToDate IS NULL OR cc.EffectiveToDate >= COALESCE(AsOfDate, CURRENT_DATE()))
+        
+        -- Recursive member (children)
+        SELECT 
+            cc.COSTCENTERID,
+            cc.COSTCENTERCODE,
+            cc.COSTCENTERNAME,
+            cc.PARENTCOSTCENTERID,
+            h.HIERARCHYLEVEL + 1,
+            h.HIERARCHYPATH || ' > ' || cc.COSTCENTERNAME,
+            h.SORTPATH || '/' || LPAD(cc.COSTCENTERID::VARCHAR, 10, '0'),
+            FALSE AS ISLEAF,
+            0 AS CHILDCOUNT,
+            h.CUMULATIVEWEIGHT * cc.ALLOCATIONWEIGHT
+        FROM FINANCIAL_PLANNING.PLANNING.COSTCENTER cc
+        INNER JOIN hierarchy h ON cc.PARENTCOSTCENTERID = h.COSTCENTERID
+        WHERE h.HIERARCHYLEVEL < COALESCE(MAX_DEPTH, 10) - 1
+          AND (cc.ISACTIVE = TRUE OR INCLUDE_INACTIVE = TRUE)
+          AND cc.EFFECTIVEFROMDATE <= COALESCE(AS_OF_DATE, CURRENT_DATE())
+          AND (cc.EFFECTIVETODATE IS NULL OR cc.EFFECTIVETODATE >= COALESCE(AS_OF_DATE, CURRENT_DATE()))
     ),
-    -- Calculate child counts
-    hierarchy_with_children AS (
-        SELECT
-            h.*,
-            (SELECT COUNT(*)
-             FROM PLANNING.CostCenter cc
-             WHERE cc.ParentCostCenterID = h.CostCenterID
-               AND (cc.IsActive = TRUE OR IncludeInactive = TRUE)) AS ActualChildCount
-        FROM hierarchy_cte h
+    -- Calculate leaf flags and child counts
+    hierarchy_with_flags AS (
+        SELECT 
+            h.COSTCENTERID,
+            h.COSTCENTERCODE,
+            h.COSTCENTERNAME,
+            h.PARENTCOSTCENTERID,
+            h.HIERARCHYLEVEL,
+            h.HIERARCHYPATH,
+            h.SORTPATH,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 
+                    FROM hierarchy h2 
+                    WHERE h2.PARENTCOSTCENTERID = h.COSTCENTERID
+                ) THEN FALSE 
+                ELSE TRUE 
+            END AS ISLEAF,
+            (
+                SELECT COUNT(*) 
+                FROM hierarchy c 
+                WHERE c.PARENTCOSTCENTERID = h.COSTCENTERID
+            ) AS CHILDCOUNT,
+            h.CUMULATIVEWEIGHT
+        FROM hierarchy h
     )
-    SELECT
-        CostCenterID,
-        CostCenterCode,
-        CostCenterName,
-        ParentCostCenterID,
-        HierarchyLevel,
-        HierarchyPath,
-        SortPath,
-        CASE WHEN ActualChildCount = 0 THEN TRUE ELSE FALSE END AS IsLeaf,
-        ActualChildCount AS ChildCount,
-        CumulativeWeight
-    FROM hierarchy_with_children
+    SELECT * FROM hierarchy_with_flags
 $$;

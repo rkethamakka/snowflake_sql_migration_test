@@ -33,6 +33,21 @@ Skills are bundled in `.claude/skills/` and load automatically.
 
 [test/results/VERIFICATION_SUMMARY.md](test/results/VERIFICATION_SUMMARY.md)
 
+## Performance Benchmark (One Stored Procedure)
+
+Clean-slate execution times from scratch (usp_ProcessBudgetConsolidation):
+
+| Step | Duration | Description |
+|------|----------|-------------|
+| Cleanup | 13s | Drop Snowflake objects, kill Docker, clear files |
+| Planner | 163s | Analyze 510-line procedure, create migration plan |
+| Migration | 872s | Deploy 6 tables, 2 functions, 1 view, 1 procedure to Snowflake |
+| Test Data | 1973s | Generate and load test data to both systems |
+| Verification | 986s | Deploy to SQL Server, execute both, compare results |
+| **Total** | **4007s (66 min)** | Full workflow from clean state to verified |
+
+System: MacBook Pro, snow CLI via PATH, Docker SQL Server 2022
+
 ## What Changed
 
 | SQL Server | Snowflake |
@@ -52,7 +67,7 @@ Found an order-of-operations bug during verification: elimination logic was runn
 ```
 .claude/skills/                                          ← Migration skills (auto-loaded)
 snowflake/procedures/usp_ProcessBudgetConsolidation.sql  ← Main deliverable
-test/results/QUICK_VERIFICATION.md                       ← Test results
+test/results/VERIFICATION_SUMMARY.md                     ← Test results
 ```
 
 ## Prerequisites
