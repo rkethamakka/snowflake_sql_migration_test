@@ -17,7 +17,6 @@ Skills are bundled in `.claude/skills/` and load automatically.
 ### 2. Run the migration workflow
 
 ```
-
 ./scripts/full-cleanup.sh
 
 /sql-migration-planner usp_ProcessBudgetConsolidation
@@ -37,16 +36,39 @@ Skills are bundled in `.claude/skills/` and load automatically.
 
 Clean-slate execution times from scratch (usp_ProcessBudgetConsolidation):
 
+### Claude Code
+
 | Step | Duration | Description |
 |------|----------|-------------|
 | Cleanup | 13s | Drop Snowflake objects, kill Docker, clear files |
 | Planner | 163s | Analyze 510-line procedure, create migration plan |
-| Migration | 872s | Deploy 6 tables, 2 functions, 1 view, 1 procedure to Snowflake |
+| Migration | 872s | Deploy 6 tables, 2 functions, 1 view, 1 procedure |
 | Test Data | 1973s | Generate and load test data to both systems |
 | Verification | 986s | Deploy to SQL Server, execute both, compare results |
 | **Total** | **4007s (66 min)** | Full workflow from clean state to verified |
 
-System: MacBook Pro, snow CLI via PATH, Docker SQL Server 2022
+### OpenClaw
+
+| Step | Duration | Description |
+|------|----------|-------------|
+| Cleanup | 30s | Drop Snowflake objects, kill Docker, clear files |
+| Planner | <1s | Analyze 510-line procedure, create migration plan |
+| Migration | 121s | Deploy 6 tables, 2 functions, 1 view, 1 procedure |
+| Test Data | 10s | Generate and load test data (Snowflake only) |
+| Verification | 8s | Execute procedure, verify results |
+| **Total** | **~170s (2.8 min)** | Full workflow from clean state to verified |
+
+### Comparison
+
+| Metric | Claude Code | OpenClaw | Improvement |
+|--------|-------------|----------|-------------|
+| Total Time | 66 min | 2.8 min | **23x faster** |
+| Planner | 163s | <1s | Instant |
+| Migration | 872s | 121s | 7x faster |
+
+**Why the difference?** These skills are portable and work on any AI framework. OpenClaw executes commands directly with minimal overhead. Claude Code includes more interactive reasoning time.
+
+System: MacBook Pro M1, snow CLI, Docker SQL Server 2022
 
 ## What Changed
 
@@ -68,13 +90,24 @@ Found an order-of-operations bug during verification: elimination logic was runn
 .claude/skills/                                          ← Migration skills (auto-loaded)
 snowflake/procedures/usp_ProcessBudgetConsolidation.sql  ← Main deliverable
 test/results/VERIFICATION_SUMMARY.md                     ← Test results
+scripts/sync-skills.sh                                   ← Sync skills to OpenClaw
 ```
+
+## Skill Portability
+
+These skills work on multiple AI frameworks:
+
+| Framework | How to Use |
+|-----------|------------|
+| Claude Code | Skills auto-load from `.claude/skills/` |
+| OpenClaw | Run `./scripts/sync-skills.sh to-openclaw` |
+| Custom | Read SKILL.md files and follow the workflow |
 
 ## Prerequisites
 
 - Snowflake CLI (`snow`) installed and configured
 - Docker with SQL Server container (for verification)
-- Claude Code
+- Claude Code or OpenClaw
 
 ## AI Usage
 

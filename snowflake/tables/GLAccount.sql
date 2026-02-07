@@ -1,38 +1,12 @@
-/*
-    GLAccount - General Ledger Account master
-    Dependencies: None (base table)
-    Translated from SQL Server to Snowflake
-*/
-
--- Use the correct database
-USE DATABASE FINANCIAL_PLANNING;
-
--- Drop table if exists to ensure clean deployment
-DROP TABLE IF EXISTS Planning.GLAccount;
-
-CREATE TABLE Planning.GLAccount (
-    GLAccountID             NUMBER(38,0) NOT NULL AUTOINCREMENT START 1 INCREMENT 1,
-    AccountNumber           VARCHAR(20) NOT NULL,
-    AccountName             VARCHAR(150) NOT NULL,
-    AccountType             CHAR(1) NOT NULL,
-    AccountSubType          VARCHAR(30) NULL,
-    ParentAccountID         NUMBER(38,0) NULL,
-    AccountLevel            NUMBER(3,0) NOT NULL DEFAULT 1,
-    IsPostable              BOOLEAN NOT NULL DEFAULT TRUE,
-    IsBudgetable            BOOLEAN NOT NULL DEFAULT TRUE,
-    IsStatistical           BOOLEAN NOT NULL DEFAULT FALSE,
-    NormalBalance           CHAR(1) NOT NULL DEFAULT 'D',
-    CurrencyCode            CHAR(3) NOT NULL DEFAULT 'USD',
-    ConsolidationAccountID  NUMBER(38,0) NULL,
-    IntercompanyFlag        BOOLEAN NOT NULL DEFAULT FALSE,
-    IsActive                BOOLEAN NOT NULL DEFAULT TRUE,
-    CreatedDateTime         TIMESTAMP_NTZ(7) NOT NULL,
-    ModifiedDateTime        TIMESTAMP_NTZ(7) NOT NULL,
-    TaxCode                 VARCHAR(20) NULL,
-    StatutoryAccountCode    VARCHAR(30) NULL,
-    IFRSAccountCode         VARCHAR(30) NULL,
-    CONSTRAINT PK_GLAccount PRIMARY KEY (GLAccountID),
-    CONSTRAINT UQ_GLAccount_Number UNIQUE (AccountNumber),
-    CONSTRAINT FK_GLAccount_Parent FOREIGN KEY (ParentAccountID) 
-        REFERENCES Planning.GLAccount (GLAccountID)
+CREATE TABLE IF NOT EXISTS FINANCIAL_PLANNING.PLANNING.GLAccount (
+    GLAccountID INT AUTOINCREMENT PRIMARY KEY,
+    AccountNumber VARCHAR(20) NOT NULL,
+    AccountName VARCHAR(100) NOT NULL,
+    AccountType VARCHAR(10),
+    IsPostable BOOLEAN DEFAULT TRUE,
+    IsBudgetable BOOLEAN DEFAULT TRUE,
+    IntercompanyFlag BOOLEAN DEFAULT FALSE,
+    NormalBalance VARCHAR(1),
+    IsActive BOOLEAN DEFAULT TRUE,
+    CreatedDateTime TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );

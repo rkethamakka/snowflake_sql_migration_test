@@ -1,87 +1,58 @@
 # Migration Plan: usp_ProcessBudgetConsolidation
 
-**Generated:** 2026-02-06
-**Source:** `src/StoredProcedures/usp_ProcessBudgetConsolidation.sql`
-**Target:** Snowflake `FINANCIAL_PLANNING.PLANNING` schema
-
----
-
-## Executive Summary
-
-**Complexity:** COMPLEX
-**Lines of Code:** 510
-**Recommended Approach:** JavaScript stored procedure
-**Estimated Effort:** 28-39 hours
-
-**Key Challenges:**
-- 2 cursors (FAST_FORWARD and SCROLL KEYSET)
-- 3 table variables with indexes
-- Dynamic SQL with sp_executesql
-- XML processing → JSON/VARIANT
-
----
-
 ## Dependencies (in order)
 
-### Tables (6)
-
+### Tables
 | Name | Status | Notes |
 |------|--------|-------|
 | FiscalPeriod | TO_MIGRATE | Reference data |
-| GLAccount | TO_MIGRATE | SPARSE column |
-| CostCenter | TO_MIGRATE | Self-referencing hierarchy |
-| BudgetHeader | TO_MIGRATE | XML → VARIANT |
-| BudgetLineItem | TO_MIGRATE | All FKs |
-| ConsolidationJournal | TO_MIGRATE | Audit table |
+| GLAccount | TO_MIGRATE | Reference data |
+| CostCenter | TO_MIGRATE | Hierarchical data |
+| BudgetHeader | TO_MIGRATE | Transaction header |
+| BudgetLineItem | TO_MIGRATE | Transaction detail |
+| ConsolidationJournal | TO_MIGRATE | Audit log |
 
-### Functions (2)
+### Functions
+| Name | Status | Notes |
+|------|--------|-------|
+| fn_GetHierarchyPath | TO_MIGRATE | Scalar UDF |
+| tvf_ExplodeCostCenterHierarchy | TO_MIGRATE | Table-valued function |
 
-| Name | Type | Status |
-|------|------|--------|
-| fn_GetHierarchyPath | Scalar | TO_MIGRATE |
-| tvf_ExplodeCostCenterHierarchy | TVF | TO_MIGRATE |
+### Views
+| Name | Status | Notes |
+|------|--------|-------|
+| vw_BudgetConsolidationSummary | TO_MIGRATE | Reporting view |
 
-### Views (1)
-
-| Name | Status |
-|------|--------|
-| vw_BudgetConsolidationSummary | TO_MIGRATE |
-
-### Procedure (1)
-
+### Procedure
 | Name | Complexity | Approach |
 |------|------------|----------|
 | usp_ProcessBudgetConsolidation | COMPLEX | JavaScript |
 
----
-
-## Complexity: COMPLEX
+## Complexity Analysis
 
 - Lines: 510
-- Cursors: 2 (FAST_FORWARD + SCROLL KEYSET)
-- Table variables: 3 (with indexes)
-- Dynamic SQL: Yes
-- Patterns: Hierarchy rollup + IC elimination
+- Cursors: 2 (FAST_FORWARD, SCROLL KEYSET)
+- Dynamic SQL: Yes (sp_executesql with OUTPUT)
+- Table Variables: 3 with indexes
+- Recommended approach: JavaScript stored procedure
 
----
+## Patterns Detected
+
+1. **Bottom-up hierarchy cursor** (lines 229-286)
+   - Traverses cost center hierarchy from leaves to root
+   - Recommended: Closure table + recursive CTE
+
+2. **SCROLL cursor for IC matching** (lines 303-345)
+   - Pairs intercompany entries for elimination
+   - Recommended: Self-join pattern
+
+3. **Dynamic SQL with options** (lines 364-399)
+   - Runtime SQL building based on parameters
+   - Recommended: JavaScript with conditional logic
 
 ## Estimated Effort
 
-| Phase | Hours |
-|-------|-------|
-| Tables (6) | 6-8 |
-| Functions (2) | 4-6 |
-| View (1) | 2-3 |
-| Procedure | 10-14 |
-| Testing | 6-8 |
-| **Total** | **28-39** |
-
----
-
-## Next Steps
-
-1. `/sql-migration usp_ProcessBudgetConsolidation`
-2. `/test-data-generator usp_ProcessBudgetConsolidation`
-3. `/sql-migration-verify usp_ProcessBudgetConsolidation`
-
-**Status:** Ready for migration
+- Dependencies: 8-12 hours
+- Procedure: 12-16 hours
+- Testing: 3-4 hours
+- **Total:** 23-32 hours
