@@ -7,7 +7,7 @@
 |------|--------|-------|
 | FiscalPeriod | TO_MIGRATE | Reference data |
 | GLAccount | TO_MIGRATE | Reference data |
-| CostCenter | TO_MIGRATE | Hierarchical data |
+| CostCenter | TO_MIGRATE | Hierarchical structure |
 | BudgetHeader | TO_MIGRATE | Transaction header |
 | BudgetLineItem | TO_MIGRATE | Transaction detail |
 | ConsolidationJournal | TO_MIGRATE | Audit log |
@@ -33,7 +33,8 @@
 - Lines: 510
 - Cursors: 2 (FAST_FORWARD, SCROLL KEYSET)
 - Dynamic SQL: Yes (sp_executesql with OUTPUT)
-- Table Variables: 3 with indexes
+- OUTPUT clauses: 11
+- TRY/CATCH: 2 blocks
 - Recommended approach: JavaScript stored procedure
 
 ## Patterns Detected

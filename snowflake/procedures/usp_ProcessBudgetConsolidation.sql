@@ -13,12 +13,10 @@ EXECUTE AS CALLER
 AS
 $$
 try {
-    // Step 1: Get source budget info
     var getBudget = snowflake.createStatement({
         sqlText: `SELECT BudgetCode, BudgetName, BudgetType, ScenarioType, FiscalYear, 
                          StartPeriodID, EndPeriodID, VersionNumber
-                  FROM FINANCIAL_PLANNING.PLANNING.BudgetHeader 
-                  WHERE BudgetHeaderID = ?`,
+                  FROM FINANCIAL_PLANNING.PLANNING.BudgetHeader WHERE BudgetHeaderID = ?`,
         binds: [SOURCE_BUDGET_HEADER_ID]
     });
     var budgetResult = getBudget.execute();
@@ -35,7 +33,6 @@ try {
     var endPeriodID = budgetResult.getColumnValue(7);
     var versionNumber = budgetResult.getColumnValue(8);
     
-    // Step 2: Create consolidated budget header
     var newVersion = CREATE_NEW_VERSION ? versionNumber + 1 : versionNumber;
     var consolidatedCode = budgetCode + "_CONS_" + new Date().toISOString().slice(0,10).replace(/-/g,'');
     
@@ -49,137 +46,71 @@ try {
     });
     createHeader.execute();
     
-    // Get new header ID
     var getNewID = snowflake.createStatement({
-        sqlText: `SELECT MAX(BudgetHeaderID) FROM FINANCIAL_PLANNING.PLANNING.BudgetHeader 
-                  WHERE BudgetCode = ?`,
+        sqlText: `SELECT MAX(BudgetHeaderID) FROM FINANCIAL_PLANNING.PLANNING.BudgetHeader WHERE BudgetCode = ?`,
         binds: [consolidatedCode]
     });
     var idResult = getNewID.execute();
     idResult.next();
     var targetHeaderID = idResult.getColumnValue(1);
     
-    // Step 3: Build hierarchy with recursive CTE and consolidate
     var consolidateSQL = `
     INSERT INTO FINANCIAL_PLANNING.PLANNING.BudgetLineItem 
-        (BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID, 
-         OriginalAmount, AdjustedAmount, SpreadMethodCode, EntryType)
+        (BudgetHeaderID, GLAccountID, CostCenterID, FiscalPeriodID, OriginalAmount, AdjustedAmount, SpreadMethodCode, EntryType)
     WITH RECURSIVE hierarchy AS (
-        -- Leaf nodes (no children)
-        SELECT 
-            cc.CostCenterID,
-            cc.ParentCostCenterID,
-            cc.CostCenterCode,
-            1 as Level
+        SELECT cc.CostCenterID, cc.ParentCostCenterID, cc.CostCenterCode, 1 as Level
         FROM FINANCIAL_PLANNING.PLANNING.CostCenter cc
-        WHERE cc.IsActive = TRUE
-          AND NOT EXISTS (
-              SELECT 1 FROM FINANCIAL_PLANNING.PLANNING.CostCenter child 
-              WHERE child.ParentCostCenterID = cc.CostCenterID
-          )
-        
+        WHERE cc.IsActive = TRUE AND NOT EXISTS (
+            SELECT 1 FROM FINANCIAL_PLANNING.PLANNING.CostCenter child WHERE child.ParentCostCenterID = cc.CostCenterID)
         UNION ALL
-        
-        -- Parent nodes
-        SELECT 
-            cc.CostCenterID,
-            cc.ParentCostCenterID,
-            cc.CostCenterCode,
-            h.Level + 1
+        SELECT cc.CostCenterID, cc.ParentCostCenterID, cc.CostCenterCode, h.Level + 1
         FROM FINANCIAL_PLANNING.PLANNING.CostCenter cc
         JOIN hierarchy h ON cc.CostCenterID = h.ParentCostCenterID
     ),
-    -- Get all amounts including rollups
     consolidated_amounts AS (
-        SELECT 
-            bli.GLAccountID,
-            h.CostCenterID as RollupCostCenterID,
-            bli.FiscalPeriodID,
-            SUM(bli.OriginalAmount) as TotalOriginal,
-            SUM(bli.AdjustedAmount) as TotalAdjusted
+        SELECT bli.GLAccountID, h.CostCenterID as RollupCostCenterID, bli.FiscalPeriodID,
+               SUM(bli.OriginalAmount) as TotalOriginal, SUM(bli.AdjustedAmount) as TotalAdjusted
         FROM FINANCIAL_PLANNING.PLANNING.BudgetLineItem bli
         JOIN hierarchy h ON bli.CostCenterID = h.CostCenterID 
-                         OR bli.CostCenterID IN (
-                             SELECT CostCenterID FROM hierarchy 
-                             WHERE ParentCostCenterID = h.CostCenterID
-                         )
+             OR bli.CostCenterID IN (SELECT CostCenterID FROM hierarchy WHERE ParentCostCenterID = h.CostCenterID)
         WHERE bli.BudgetHeaderID = ?
         GROUP BY bli.GLAccountID, h.CostCenterID, bli.FiscalPeriodID
     ),
-    -- Apply IC elimination for matched pairs
     with_eliminations AS (
-        SELECT 
-            ca.GLAccountID,
-            ca.RollupCostCenterID,
-            ca.FiscalPeriodID,
-            CASE 
-                WHEN gla.IntercompanyFlag = TRUE AND EXISTS (
-                    SELECT 1 FROM consolidated_amounts ca2
-                    JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla2 
-                        ON ca2.GLAccountID = gla2.GLAccountID
-                    WHERE gla2.IntercompanyFlag = TRUE
-                      AND ca2.FiscalPeriodID = ca.FiscalPeriodID
-                      AND ca2.RollupCostCenterID != ca.RollupCostCenterID
-                      AND ca2.TotalOriginal + ca2.TotalAdjusted = -(ca.TotalOriginal + ca.TotalAdjusted)
-                )
-                THEN 0
-                ELSE ca.TotalOriginal
-            END as FinalOriginal,
-            CASE 
-                WHEN gla.IntercompanyFlag = TRUE AND EXISTS (
-                    SELECT 1 FROM consolidated_amounts ca2
-                    JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla2 
-                        ON ca2.GLAccountID = gla2.GLAccountID
-                    WHERE gla2.IntercompanyFlag = TRUE
-                      AND ca2.FiscalPeriodID = ca.FiscalPeriodID
-                      AND ca2.RollupCostCenterID != ca.RollupCostCenterID
-                      AND ca2.TotalOriginal + ca2.TotalAdjusted = -(ca.TotalOriginal + ca.TotalAdjusted)
-                )
-                THEN 0
-                ELSE ca.TotalAdjusted
-            END as FinalAdjusted
+        SELECT ca.GLAccountID, ca.RollupCostCenterID, ca.FiscalPeriodID,
+            CASE WHEN gla.IntercompanyFlag = TRUE AND EXISTS (
+                SELECT 1 FROM consolidated_amounts ca2
+                JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla2 ON ca2.GLAccountID = gla2.GLAccountID
+                WHERE gla2.IntercompanyFlag = TRUE AND ca2.FiscalPeriodID = ca.FiscalPeriodID
+                  AND ca2.RollupCostCenterID != ca.RollupCostCenterID
+                  AND ca2.TotalOriginal + ca2.TotalAdjusted = -(ca.TotalOriginal + ca.TotalAdjusted))
+            THEN 0 ELSE ca.TotalOriginal END as FinalOriginal,
+            CASE WHEN gla.IntercompanyFlag = TRUE AND EXISTS (
+                SELECT 1 FROM consolidated_amounts ca2
+                JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla2 ON ca2.GLAccountID = gla2.GLAccountID
+                WHERE gla2.IntercompanyFlag = TRUE AND ca2.FiscalPeriodID = ca.FiscalPeriodID
+                  AND ca2.RollupCostCenterID != ca.RollupCostCenterID
+                  AND ca2.TotalOriginal + ca2.TotalAdjusted = -(ca.TotalOriginal + ca.TotalAdjusted))
+            THEN 0 ELSE ca.TotalAdjusted END as FinalAdjusted
         FROM consolidated_amounts ca
         JOIN FINANCIAL_PLANNING.PLANNING.GLAccount gla ON ca.GLAccountID = gla.GLAccountID
     )
-    SELECT 
-        ?,  -- TargetHeaderID
-        GLAccountID,
-        RollupCostCenterID,
-        FiscalPeriodID,
-        FinalOriginal,
-        FinalAdjusted,
-        'CONSOLIDATED',
-        'ROLLUP'
-    FROM with_eliminations
-    WHERE FinalOriginal != 0 OR FinalAdjusted != 0`;
+    SELECT ?, GLAccountID, RollupCostCenterID, FiscalPeriodID, FinalOriginal, FinalAdjusted, 'CONSOLIDATED', 'ROLLUP'
+    FROM with_eliminations WHERE FinalOriginal != 0 OR FinalAdjusted != 0`;
     
-    var consolidate = snowflake.createStatement({
-        sqlText: consolidateSQL,
-        binds: [SOURCE_BUDGET_HEADER_ID, targetHeaderID]
-    });
-    var consResult = consolidate.execute();
+    var consolidate = snowflake.createStatement({sqlText: consolidateSQL, binds: [SOURCE_BUDGET_HEADER_ID, targetHeaderID]});
+    consolidate.execute();
     
-    // Get row count
     var countRows = snowflake.createStatement({
-        sqlText: `SELECT COUNT(*) FROM FINANCIAL_PLANNING.PLANNING.BudgetLineItem 
-                  WHERE BudgetHeaderID = ?`,
+        sqlText: `SELECT COUNT(*) FROM FINANCIAL_PLANNING.PLANNING.BudgetLineItem WHERE BudgetHeaderID = ?`,
         binds: [targetHeaderID]
     });
     var countResult = countRows.execute();
     countResult.next();
     var rowsProcessed = countResult.getColumnValue(1);
     
-    return {
-        TARGET_BUDGET_HEADER_ID: targetHeaderID,
-        ROWS_PROCESSED: rowsProcessed,
-        ERROR_MESSAGE: ""
-    };
-    
+    return {TARGET_BUDGET_HEADER_ID: targetHeaderID, ROWS_PROCESSED: rowsProcessed, ERROR_MESSAGE: ""};
 } catch (err) {
-    return {
-        TARGET_BUDGET_HEADER_ID: null,
-        ROWS_PROCESSED: 0,
-        ERROR_MESSAGE: err.message
-    };
+    return {TARGET_BUDGET_HEADER_ID: null, ROWS_PROCESSED: 0, ERROR_MESSAGE: err.message};
 }
 $$;
