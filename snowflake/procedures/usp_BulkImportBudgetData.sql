@@ -62,10 +62,23 @@ $$
         
         logStep('Create Staging', 0, 'COMPLETED', null);
         
-        // Parse and load source data
-        if (IMPORT_SOURCE === 'VARIANT_DATA' && SOURCE_DATA) {
+        // Debug: Check condition
+        var cond1 = (IMPORT_SOURCE === 'VARIANT_DATA');
+        var cond2 = (SOURCE_DATA ? true : false);
+        logStep('Input Check', 0, 'DEBUG', 'SRC=' + IMPORT_SOURCE + ' cond1=' + cond1 + ' cond2=' + cond2);
+        
+        // Parse and load source data - try simplified condition
+        if (cond1 && cond2) {
+            logStep('Entering if block', 0, 'DEBUG', 'in if');
+            
+            // FIX: Use Object.keys() for VARIANT array length (not .length)
             var items = SOURCE_DATA;
-            for (var i = 0; i < items.length; i++) {
+            logStep('Got items', 0, 'DEBUG', 'type=' + typeof items);
+            
+            var itemCount = Object.keys(items).length;
+            logStep('Got count', itemCount, 'DEBUG', 'count=' + itemCount);
+            
+            for (var i = 0; i < itemCount; i++) {
                 var item = items[i];
                 executeSQL(`
                     INSERT INTO TEMP_IMPORT_STAGING 
@@ -74,7 +87,7 @@ $$
                 `, [i+1, item.GLAccountID, item.CostCenterID, item.FiscalPeriodID, 
                     item.Amount, item.EntryType || 'IMPORTED']);
             }
-            logStep('Load Data', items.length, 'COMPLETED', 'Loaded ' + items.length + ' rows');
+            logStep('Load Data', itemCount, 'COMPLETED', 'Loaded ' + itemCount + ' rows');
         }
         
         // Validation

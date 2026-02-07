@@ -1,5 +1,6 @@
 -- usp_PerformFinancialClose - Period-end close orchestration
 -- Translated from SQL Server to Snowflake JavaScript stored procedure
+-- Calls: usp_ProcessBudgetConsolidation, usp_ExecuteCostAllocation, usp_ReconcileIntercompanyBalances
 
 CREATE OR REPLACE PROCEDURE FINANCIAL_PLANNING.PLANNING.USP_PERFORMFINANCIALCLOSE(
     FISCAL_PERIOD_ID FLOAT,
@@ -7,6 +8,7 @@ CREATE OR REPLACE PROCEDURE FINANCIAL_PLANNING.PLANNING.USP_PERFORMFINANCIALCLOS
     RUN_CONSOLIDATION BOOLEAN,
     RUN_ALLOCATIONS BOOLEAN,
     RUN_RECONCILIATION BOOLEAN,
+    FORCE_CLOSE BOOLEAN,
     CLOSING_USER_ID FLOAT
 )
 RETURNS VARIANT
@@ -14,16 +16,34 @@ LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
 AS
 $$
+    var startTime = new Date();
     var result = {
-        OVERALL_STATUS: 'PENDING',
-        CONSOLIDATION_RESULT: null,
-        ALLOCATION_RESULT: null,
-        RECONCILIATION_RESULT: null,
-        CLOSE_STEPS: [],
-        ERROR_MESSAGE: null
+        RUN_ID: null,
+        FISCAL_PERIOD_ID: FISCAL_PERIOD_ID,
+        CLOSE_TYPE: CLOSE_TYPE || 'SOFT',
+        OVERALL_STATUS: null,
+        TOTAL_DURATION_MS: 0,
+        PERIOD_INFO: {},
+        VALIDATION_ERRORS: [],
+        PROCESSING_STEPS: [],
+        SUMMARY: {
+            COMPLETED_STEPS: 0,
+            FAILED_STEPS: 0,
+            WARNING_STEPS: 0,
+            CONSOLIDATED_BUDGET_ID: null,
+            ALLOCATION_ROWS: 0,
+            UNRECONCILED_COUNT: 0
+        }
     };
     
     var closeType = CLOSE_TYPE || 'SOFT';
+    var runConsolidation = RUN_CONSOLIDATION !== false;
+    var runAllocations = RUN_ALLOCATIONS !== false;
+    var runRecon = RUN_RECONCILIATION !== false;
+    var forceClose = FORCE_CLOSE === true;
+    
+    var activeBudgetId = null;
+    var consolidatedBudgetId = null;
     
     function executeSQL(sql, binds) {
         try {
@@ -42,28 +62,38 @@ $$
         return null;
     }
     
-    function callProcedure(procName, params) {
-        var paramStr = params.map(function(p) {
-            if (p === null) return 'NULL';
-            if (typeof p === 'boolean') return p ? 'TRUE' : 'FALSE';
-            if (typeof p === 'string') return "'" + p + "'";
-            return p;
-        }).join(', ');
-        
-        var sql = 'CALL PLANNING.' + procName + '(' + paramStr + ')';
-        var rs = executeSQL(sql);
+    function getRow(sql, binds) {
+        var rs = executeSQL(sql, binds);
         if (rs.next()) {
-            return rs.getColumnValue(1);
+            var row = {};
+            for (var i = 1; i <= rs.getColumnCount(); i++) {
+                row[rs.getColumnName(i)] = rs.getColumnValue(i);
+            }
+            return row;
         }
         return null;
     }
     
-    function logStep(step, status, details) {
-        result.CLOSE_STEPS.push({
-            STEP_NAME: step,
+    function logStep(stepName, status, durationMs, rowsAffected, errorMessage) {
+        result.PROCESSING_STEPS.push({
+            STEP_NUMBER: result.PROCESSING_STEPS.length + 1,
+            STEP_NAME: stepName,
             STATUS: status,
-            DETAILS: details,
-            TIMESTAMP: new Date().toISOString()
+            DURATION_MS: durationMs,
+            ROWS_AFFECTED: rowsAffected,
+            ERROR_MESSAGE: errorMessage
+        });
+        if (status === 'COMPLETED') result.SUMMARY.COMPLETED_STEPS++;
+        else if (status === 'FAILED') result.SUMMARY.FAILED_STEPS++;
+        else if (status === 'WARNING') result.SUMMARY.WARNING_STEPS++;
+    }
+    
+    function addValidationError(code, message, severity, blocksClose) {
+        result.VALIDATION_ERRORS.push({
+            ERROR_CODE: code,
+            ERROR_MESSAGE: message,
+            SEVERITY: severity,
+            BLOCKS_CLOSE: blocksClose
         });
     }
     
@@ -71,111 +101,232 @@ $$
         executeSQL('USE DATABASE FINANCIAL_PLANNING');
         executeSQL('USE SCHEMA PLANNING');
         
-        // Validate period exists and is open
-        var periodInfo = executeSQL(`
-            SELECT FISCALYEAR, PERIODNAME, ISCLOSED
+        // Generate run ID
+        result.RUN_ID = getValue("SELECT UUID_STRING()");
+        
+        // =====================================================================
+        // Step 1: Validate period
+        // =====================================================================
+        var stepStart = new Date();
+        
+        var periodInfo = getRow(`
+            SELECT FISCALYEAR, FISCALMONTH, PERIODNAME, ISCLOSED
             FROM PLANNING.FISCALPERIOD
             WHERE FISCALPERIODID = ?
         `, [FISCAL_PERIOD_ID]);
         
-        if (!periodInfo.next()) {
-            throw new Error('Fiscal period not found: ' + FISCAL_PERIOD_ID);
-        }
-        
-        var fiscalYear = periodInfo.getColumnValue(1);
-        var periodName = periodInfo.getColumnValue(2);
-        var isClosed = periodInfo.getColumnValue(3);
-        
-        if (isClosed && closeType !== 'SOFT') {
-            throw new Error('Period is already closed');
-        }
-        
-        logStep('Validate Period', 'COMPLETED', 'Period: ' + periodName);
-        
-        // Find budget for this period
-        var budgetId = getValue(`
-            SELECT BUDGETHEADERID 
-            FROM PLANNING.BUDGETHEADER 
-            WHERE FISCALYEAR = ? AND STATUSCODE = 'APPROVED'
-            ORDER BY BUDGETHEADERID DESC LIMIT 1
-        `, [fiscalYear]);
-        
-        if (!budgetId) {
-            throw new Error('No approved budget found for FY' + fiscalYear);
-        }
-        
-        logStep('Find Budget', 'COMPLETED', 'Budget ID: ' + budgetId);
-        
-        // Step 1: Run Consolidation
-        if (RUN_CONSOLIDATION) {
-            logStep('Consolidation', 'RUNNING', null);
+        if (!periodInfo) {
+            addValidationError('INVALID_PERIOD', 'Fiscal period not found: ' + FISCAL_PERIOD_ID, 'ERROR', true);
+        } else {
+            result.PERIOD_INFO = {
+                FISCAL_YEAR: periodInfo.FISCALYEAR,
+                FISCAL_MONTH: periodInfo.FISCALMONTH,
+                PERIOD_NAME: periodInfo.PERIODNAME,
+                IS_CLOSED: periodInfo.ISCLOSED
+            };
             
-            var consolResult = callProcedure('USP_PROCESSBUDGETCONSOLIDATION', 
-                [budgetId, null, 'FULL', true, true, null, CLOSING_USER_ID, false]);
-            
-            result.CONSOLIDATION_RESULT = consolResult;
-            
-            if (consolResult && consolResult.ERROR_MESSAGE) {
-                logStep('Consolidation', 'FAILED', consolResult.ERROR_MESSAGE);
-            } else {
-                logStep('Consolidation', 'COMPLETED', 
-                    'Rows: ' + (consolResult ? consolResult.ROWS_PROCESSED : 0));
+            if (periodInfo.ISCLOSED && !forceClose) {
+                addValidationError('ALREADY_CLOSED', 'Period is already closed. Use FORCE_CLOSE=TRUE to reprocess.', 'ERROR', true);
             }
         }
         
-        // Step 2: Run Allocations
-        if (RUN_ALLOCATIONS) {
-            logStep('Allocations', 'RUNNING', null);
-            
-            var allocResult = callProcedure('USP_EXECUTECOSTALLOCATION',
-                [budgetId, null, FISCAL_PERIOD_ID, false, 100, CLOSING_USER_ID]);
-            
-            result.ALLOCATION_RESULT = allocResult;
-            
-            if (allocResult && allocResult.WARNING_MESSAGES) {
-                logStep('Allocations', 'WARNING', allocResult.WARNING_MESSAGES);
-            } else {
-                logStep('Allocations', 'COMPLETED', 
-                    'Rows: ' + (allocResult ? allocResult.ROWS_ALLOCATED : 0));
-            }
-        }
-        
-        // Step 3: Run Reconciliation
-        if (RUN_RECONCILIATION) {
-            logStep('Reconciliation', 'RUNNING', null);
-            
-            var reconResult = callProcedure('USP_RECONCILEINTERCOMPANYBALANCES',
-                [budgetId, 0.01, 0.001, false]);
-            
-            result.RECONCILIATION_RESULT = reconResult;
-            
-            if (reconResult && reconResult.UNRECONCILED_COUNT > 0) {
-                logStep('Reconciliation', 'WARNING', 
-                    'Unreconciled: ' + reconResult.UNRECONCILED_COUNT);
-            } else {
-                logStep('Reconciliation', 'COMPLETED', 'All balanced');
-            }
-        }
-        
-        // Mark period as closed (for HARD/FINAL close)
+        // Check prior periods for HARD/FINAL close
         if (closeType === 'HARD' || closeType === 'FINAL') {
-            executeSQL(`
+            var priorOpen = getValue(`
+                SELECT COUNT(*) FROM PLANNING.FISCALPERIOD
+                WHERE FISCALYEAR = ? AND FISCALMONTH < ? AND ISCLOSED = FALSE
+                AND COALESCE(ISADJUSTMENTPERIOD, FALSE) = FALSE
+            `, [periodInfo ? periodInfo.FISCALYEAR : 0, periodInfo ? periodInfo.FISCALMONTH : 0]);
+            
+            if (priorOpen > 0) {
+                addValidationError('PRIOR_OPEN', 'Prior periods must be closed before ' + closeType + ' close', 'ERROR', true);
+            }
+        }
+        
+        // Check pending journals
+        var pendingJournals = getValue(`
+            SELECT COUNT(*) FROM PLANNING.CONSOLIDATIONJOURNAL
+            WHERE FISCALPERIODID = ? AND STATUSCODE IN ('DRAFT', 'SUBMITTED')
+        `, [FISCAL_PERIOD_ID]);
+        
+        if (pendingJournals > 0) {
+            var severity = closeType === 'FINAL' ? 'ERROR' : 'WARNING';
+            var blocks = closeType === 'FINAL';
+            addValidationError('PENDING_JOURNALS', pendingJournals + ' pending journal(s) must be posted or rejected', severity, blocks);
+        }
+        
+        var stepDuration = new Date() - stepStart;
+        var hasBlockingErrors = result.VALIDATION_ERRORS.some(function(e) { return e.BLOCKS_CLOSE; });
+        logStep('Period Validation', hasBlockingErrors ? 'FAILED' : 'COMPLETED', stepDuration, result.VALIDATION_ERRORS.length, null);
+        
+        if (hasBlockingErrors) {
+            result.OVERALL_STATUS = 'VALIDATION_FAILED';
+            result.TOTAL_DURATION_MS = new Date() - startTime;
+            return result;
+        }
+        
+        // =====================================================================
+        // Step 2: Find active budget for period
+        // =====================================================================
+        stepStart = new Date();
+        
+        activeBudgetId = getValue(`
+            SELECT BUDGETHEADERID FROM PLANNING.BUDGETHEADER bh
+            WHERE EXISTS (
+                SELECT 1 FROM PLANNING.FISCALPERIOD fp
+                WHERE fp.FISCALPERIODID = ?
+                AND fp.FISCALPERIODID BETWEEN bh.STARTPERIODID AND bh.ENDPERIODID
+            )
+            AND bh.STATUSCODE IN ('APPROVED', 'LOCKED')
+            ORDER BY bh.VERSIONNUMBER DESC
+            LIMIT 1
+        `, [FISCAL_PERIOD_ID]);
+        
+        logStep('Find Active Budget', activeBudgetId ? 'COMPLETED' : 'WARNING', 
+                new Date() - stepStart, activeBudgetId ? 1 : 0,
+                activeBudgetId ? null : 'No active budget found');
+        
+        // =====================================================================
+        // Step 3: Run Consolidation
+        // =====================================================================
+        if (runConsolidation && activeBudgetId) {
+            stepStart = new Date();
+            try {
+                var consolResult = getRow(`
+                    SELECT * FROM TABLE(RESULT_SCAN(LAST_QUERY_ID(-1)))
+                `);
+                
+                // Call consolidation procedure
+                var consolRs = executeSQL(`
+                    CALL PLANNING.USP_PROCESSBUDGETCONSOLIDATION(?, 'FULL', TRUE, FALSE, ?)
+                `, [activeBudgetId, CLOSING_USER_ID]);
+                
+                if (consolRs.next()) {
+                    var consolOutput = consolRs.getColumnValue(1);
+                    if (consolOutput && consolOutput.TARGET_BUDGET_ID) {
+                        consolidatedBudgetId = consolOutput.TARGET_BUDGET_ID;
+                        result.SUMMARY.CONSOLIDATED_BUDGET_ID = consolidatedBudgetId;
+                    }
+                }
+                
+                logStep('Budget Consolidation', 'COMPLETED', new Date() - stepStart, 
+                        consolidatedBudgetId ? 1 : 0, null);
+            } catch (err) {
+                logStep('Budget Consolidation', closeType === 'FINAL' ? 'FAILED' : 'WARNING',
+                        new Date() - stepStart, 0, err.message);
+                if (closeType === 'FINAL') throw err;
+            }
+        }
+        
+        // =====================================================================
+        // Step 4: Run Cost Allocations
+        // =====================================================================
+        var effectiveBudgetId = consolidatedBudgetId || activeBudgetId;
+        
+        if (runAllocations && effectiveBudgetId) {
+            stepStart = new Date();
+            try {
+                var allocRs = executeSQL(`
+                    CALL PLANNING.USP_EXECUTECOSTALLOCATION(?, NULL, ?, FALSE, 100, ?)
+                `, [effectiveBudgetId, FISCAL_PERIOD_ID, CLOSING_USER_ID]);
+                
+                var allocRows = 0;
+                if (allocRs.next()) {
+                    var allocOutput = allocRs.getColumnValue(1);
+                    if (allocOutput && allocOutput.ROWS_ALLOCATED) {
+                        allocRows = allocOutput.ROWS_ALLOCATED;
+                        result.SUMMARY.ALLOCATION_ROWS = allocRows;
+                    }
+                }
+                
+                logStep('Cost Allocations', 'COMPLETED', new Date() - stepStart, allocRows, null);
+            } catch (err) {
+                logStep('Cost Allocations', closeType === 'FINAL' ? 'FAILED' : 'WARNING',
+                        new Date() - stepStart, 0, err.message);
+                if (closeType === 'FINAL') throw err;
+            }
+        }
+        
+        // =====================================================================
+        // Step 5: Run Intercompany Reconciliation
+        // =====================================================================
+        if (runRecon && effectiveBudgetId) {
+            stepStart = new Date();
+            try {
+                var reconRs = executeSQL(`
+                    CALL PLANNING.USP_RECONCILEINTERCOMPANYBALANCES(?, NULL, NULL, 0.01, 0.001, ?)
+                `, [effectiveBudgetId, closeType !== 'FINAL']);
+                
+                var unreconCount = 0;
+                if (reconRs.next()) {
+                    var reconOutput = reconRs.getColumnValue(1);
+                    if (reconOutput && reconOutput.STATISTICS) {
+                        unreconCount = reconOutput.STATISTICS.UNRECONCILED || 0;
+                        result.SUMMARY.UNRECONCILED_COUNT = unreconCount;
+                    }
+                }
+                
+                var reconStatus = 'COMPLETED';
+                if (unreconCount > 0) {
+                    reconStatus = closeType === 'FINAL' ? 'FAILED' : 'WARNING';
+                }
+                
+                logStep('Intercompany Reconciliation', reconStatus, new Date() - stepStart, 
+                        unreconCount, unreconCount > 0 ? unreconCount + ' unreconciled items' : null);
+                
+                if (closeType === 'FINAL' && unreconCount > 0) {
+                    throw new Error('Cannot perform FINAL close with unreconciled intercompany balances');
+                }
+            } catch (err) {
+                logStep('Intercompany Reconciliation', 'FAILED', new Date() - stepStart, 0, err.message);
+                if (closeType === 'FINAL') throw err;
+            }
+        }
+        
+        // =====================================================================
+        // Step 6: Lock the period
+        // =====================================================================
+        stepStart = new Date();
+        
+        executeSQL('BEGIN TRANSACTION');
+        
+        try {
+            // Update period to closed
+            var periodUpdate = executeSQL(`
                 UPDATE PLANNING.FISCALPERIOD
-                SET ISCLOSED = TRUE
+                SET ISCLOSED = TRUE,
+                    CLOSEDBYUSERID = ?,
+                    CLOSEDDATETIME = CURRENT_TIMESTAMP(),
+                    MODIFIEDDATETIME = CURRENT_TIMESTAMP()
                 WHERE FISCALPERIODID = ?
+            `, [CLOSING_USER_ID, FISCAL_PERIOD_ID]);
+            
+            // Lock all approved budgets in this period
+            var budgetUpdate = executeSQL(`
+                UPDATE PLANNING.BUDGETHEADER
+                SET STATUSCODE = 'LOCKED',
+                    MODIFIEDDATETIME = CURRENT_TIMESTAMP()
+                WHERE STATUSCODE = 'APPROVED'
+                AND ? BETWEEN STARTPERIODID AND ENDPERIODID
             `, [FISCAL_PERIOD_ID]);
             
-            logStep('Close Period', 'COMPLETED', 'Type: ' + closeType);
+            executeSQL('COMMIT');
+            
+            logStep('Lock Period', 'COMPLETED', new Date() - stepStart, 
+                    periodUpdate.getNumRowsAffected() + budgetUpdate.getNumRowsAffected(), null);
+        } catch (err) {
+            executeSQL('ROLLBACK');
+            logStep('Lock Period', 'FAILED', new Date() - stepStart, 0, err.message);
+            throw err;
         }
         
-        result.OVERALL_STATUS = 'SUCCESS';
-        
-        return result;
+        result.OVERALL_STATUS = 'COMPLETED';
         
     } catch (err) {
-        logStep('Error', 'FAILED', err.message);
         result.OVERALL_STATUS = 'FAILED';
-        result.ERROR_MESSAGE = err.message;
-        return result;
+        logStep('Error Handler', 'ERROR', 0, 0, err.message);
     }
+    
+    result.TOTAL_DURATION_MS = new Date() - startTime;
+    return result;
 $$;

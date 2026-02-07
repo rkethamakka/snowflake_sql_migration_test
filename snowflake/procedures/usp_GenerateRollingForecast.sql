@@ -136,12 +136,12 @@ $$
         logStep('Calculate Forecast', 0, 'COMPLETED', 'Method: ' + method);
         
         // Generate forecast line items for each period
+        // FIX: Can't use bind variable in LIMIT, use string interpolation
         var periodsRS = executeSQL(`
             SELECT FISCALPERIODID 
             FROM PLANNING.FISCALPERIOD 
             ORDER BY FISCALPERIODID 
-            LIMIT ?
-        `, [fcstPeriods]);
+            LIMIT ` + fcstPeriods);
         
         var periodIds = [];
         while (periodsRS.next()) {
